@@ -1,0 +1,6 @@
+{
+  "name": "transmonitor-climate",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.mjs"
+}

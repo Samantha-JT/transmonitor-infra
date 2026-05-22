@@ -1,0 +1,25 @@
+# ── AWS ───────────────────────────────────────────────────────────────────────
+aws_region  = "eu-west-1"
+environment = "prod"
+
+# ── Cloudflare ────────────────────────────────────────────────────────────────
+cloudflare_api_token = "your-cloudflare-api-token"
+cloudflare_zone_id   = "your-zone-id"
+hostname             = "trans.yourdomain.com"
+
+# ── Security ──────────────────────────────────────────────────────────────────
+# Shared secret injected by Cloudflare, validated by Lambda.
+# Generate with: openssl rand -hex 32
+origin_verify_secret = "generate-a-strong-random-secret"
+
+# ── API keys (stored as SSM SecureString, omit if unused) ────────────────────
+groq_api_key       = ""   # https://console.groq.com (free)
+openrouter_api_key = ""   # https://openrouter.ai (free)
+
+acled_email    = ""   # https://acleddata.com
+acled_password = ""
+
+finnhub_api_key    = ""   # https://finnhub.io
+fred_api_key       = ""   # https://fred.stlouisfed.org
+nasa_firms_api_key = ""   # https://firms.modaps.eosdis.nasa.gov
+cloudflare_account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
