@@ -1,13 +1,29 @@
+# Terraform state and local files
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan
 crash.log
-*.tfvars
-!*.tfvars.example
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 lambda_zips/
+
+# tfvars contain secrets — never commit
+*.tfvars
+!*.tfvars.example
+
+# Lock files are committed to pin provider versions
+# .terraform.lock.hcl  <-- intentionally NOT ignored
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.env
+*.tfvars
