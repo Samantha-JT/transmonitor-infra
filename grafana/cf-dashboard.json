@@ -20,18 +20,21 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cf_requests_24h[2m])",
+          "expr": "cf_requests_24h",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
-            "lastNotNull"
-          ]
+            "last"
+          ],
+          "fields": ""
         },
         "colorMode": "background"
       },
@@ -56,18 +59,21 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cf_unique_visitors_24h[2m])",
+          "expr": "cf_unique_visitors_24h",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
-            "lastNotNull"
-          ]
+            "last"
+          ],
+          "fields": ""
         },
         "colorMode": "background"
       },
@@ -92,18 +98,21 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cf_threats_24h[2m])",
+          "expr": "cf_threats_24h",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
-            "lastNotNull"
-          ]
+            "last"
+          ],
+          "fields": ""
         },
         "colorMode": "background"
       },
@@ -128,18 +137,21 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cf_cache_hit_ratio[2m])",
+          "expr": "cf_cache_hit_ratio",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
-            "lastNotNull"
-          ]
+            "last"
+          ],
+          "fields": ""
         }
       },
       "fieldConfig": {
@@ -179,18 +191,21 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cf_threat_rate[2m])",
+          "expr": "cf_threat_rate",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
-            "lastNotNull"
-          ]
+            "last"
+          ],
+          "fields": ""
         }
       },
       "fieldConfig": {
@@ -230,18 +245,21 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cf_bytes_24h[2m])",
+          "expr": "cf_bytes_24h",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
-            "lastNotNull"
-          ]
+            "last"
+          ],
+          "fields": ""
         },
         "colorMode": "background"
       },
@@ -270,21 +288,24 @@
           "expr": "last_over_time(cf_requests_total[2m])",
           "legendFormat": "Requests",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         },
         {
           "expr": "last_over_time(cf_threats_total[2m])",
           "legendFormat": "Threats",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         },
         {
           "expr": "last_over_time(cf_cached_requests[2m])",
           "legendFormat": "Cached",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -311,14 +332,16 @@
           "expr": "last_over_time(cf_bytes_total[2m])",
           "legendFormat": "Total",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         },
         {
           "expr": "last_over_time(cf_cached_bytes[2m])",
           "legendFormat": "Cached",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -346,7 +369,8 @@
           "expr": "last_over_time(cf_cache_hit_ratio[2m])",
           "legendFormat": "Cache hit %",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -376,14 +400,16 @@
           "expr": "last_over_time(cf_unique_visitors[2m])",
           "legendFormat": "Unique visitors",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         },
         {
           "expr": "last_over_time(cf_pageviews_total[2m])",
           "legendFormat": "Pageviews",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -410,7 +436,8 @@
           "expr": "cf_scrape_errors_total",
           "legendFormat": "Errors",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -441,7 +468,8 @@
           "expr": "last_over_time(cf_requests_total[2m]) - last_over_time(cf_requests_total[2m] offset 1h)",
           "legendFormat": "Delta vs 1h ago",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -481,7 +509,8 @@
           "expr": "last_over_time(cf_threat_rate[2m])",
           "legendFormat": "Threat rate %",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -529,7 +558,8 @@
           "expr": "last_over_time(cf_cached_bytes[2m]) / last_over_time(cf_bytes_total[2m]) * 100",
           "legendFormat": "Cached bandwidth %",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -578,7 +608,8 @@
           "expr": "cf_bytes_total / cf_requests_total",
           "legendFormat": "Bytes/request",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -606,7 +637,8 @@
           "expr": "increase(cf_scrape_errors_total[5m])",
           "legendFormat": "",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -678,7 +710,8 @@
           "expr": "cf_threats_total / cf_requests_total * 100",
           "legendFormat": "Threat rate 1h %",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -724,7 +757,8 @@
           "expr": "cf_pageviews_total / cf_unique_visitors",
           "legendFormat": "Pages/visitor",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -768,14 +802,16 @@
           "expr": "cf_requests_24h",
           "legendFormat": "Today",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         },
         {
           "expr": "cf_requests_24h offset 24h",
           "legendFormat": "Yesterday",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -802,14 +838,16 @@
           "expr": "cf_threats_24h",
           "legendFormat": "Today",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         },
         {
           "expr": "cf_threats_24h offset 24h",
           "legendFormat": "Yesterday",
           "datasource": {
-            "type": "prometheus"
+            "type": "prometheus",
+            "uid": "dfnxthbjh00lcc"
           }
         }
       ],
@@ -825,5 +863,6 @@
         }
       }
     }
-  ]
+  ],
+  "__inputs": []
 }
