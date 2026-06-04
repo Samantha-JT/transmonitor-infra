@@ -6,7 +6,7 @@ INFRA_DIR="$(dirname "$SCRIPT_DIR")"
 SRC_DIR="$INFRA_DIR/lambda_src"
 ESBUILD="$INFRA_DIR/node_modules/.bin/esbuild"
 
-FUNCTIONS=(feed-digest ai-insights trans-rights youtube-proxy feed-ingestor health rss-proxy youtube-live youtube-latest news-digest sentiment-stats tmm-data)
+FUNCTIONS=(feed-digest ai-insights trans-rights youtube-proxy feed-ingestor health rss-proxy youtube-live youtube-latest news-digest sentiment-stats tmm-data media-bias)
 
 for fn in "${FUNCTIONS[@]}"; do
   echo "→ Building $fn..."

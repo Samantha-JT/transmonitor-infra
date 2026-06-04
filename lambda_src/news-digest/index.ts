@@ -462,8 +462,12 @@ async function writeStoryTracking(items: ParsedItem[], variant: string, lang: st
     await runRedisPipeline(commands);
   }
 
-  // Refresh accumulator TTL once per build — 48h, shorter than STORY_TTL since digest cron only needs ~24h lookback.
-  await runRedisPipeline([['EXPIRE', accKey, DIGEST_ACCUMULATOR_TTL]]);
+  // Trim accumulator entries older than 48h and refresh TTL
+  const cutoff = String(Date.now() - DIGEST_ACCUMULATOR_TTL * 1000);
+  await runRedisPipeline([
+    ['ZREMRANGEBYSCORE', accKey, '-inf', cutoff],
+    ['EXPIRE', accKey, DIGEST_ACCUMULATOR_TTL],
+  ]);
 }
 
 async function buildDigest(variant: string, lang: string): Promise<unknown> {
@@ -624,6 +628,14 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
         }
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
+      // Bias scoring — await with 20s hard cap so Lambda doesn't exit early
+      const biasTargets = filteredSliced.filter(item => item.link);
+      if (biasTargets.length > 0) {
+        await Promise.race([
+          Promise.allSettled(biasTargets.map(item => scoreAndIngestBias(item))),
+          new Promise<void>(resolve => setTimeout(resolve, 20_000)),
+        ]);
+      }
       categories[category] = {
         items: filteredSliced.map(item => {
           const hash = item.titleHash!;
@@ -694,3 +706,257 @@ export const handler = async (event: { queryStringParameters?: Record<string, st
     return { statusCode: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(fallback) };
   }
 };
+
+// ─── Media bias scoring ───────────────────────────────────────────────────────
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { createClient as createRedisClient } from 'redis';
+
+const BIAS_SOURCE_REGISTRY = new Set([
+  'dailymail.co.uk','telegraph.co.uk','thesun.co.uk','spectator.co.uk',
+  'gbnews.com','talk.tv','thetimes.co.uk','express.co.uk','theguardian.com',
+  'independent.co.uk','mirror.co.uk','inews.co.uk','bbc.co.uk','channel4.com',
+  'itv.com','sky.com','metro.co.uk','huffingtonpost.co.uk','vice.com',
+  'pinknews.co.uk','attitude.co.uk','divamag.co.uk','transactual.org.uk','stonewall.org.uk',
+]);
+
+const BIAS_EDITORIAL: Record<string, string> = {
+  // UK press
+  'dailymail.co.uk':'hostile','telegraph.co.uk':'hostile','thesun.co.uk':'hostile',
+  'spectator.co.uk':'hostile','gbnews.com':'hostile','talk.tv':'hostile',
+  'thetimes.co.uk':'hostile',
+  'express.co.uk':'negative','theguardian.com':'negative','bbc.co.uk':'negative',
+  'itv.com':'negative',
+  'independent.co.uk':'neutral','mirror.co.uk':'neutral','inews.co.uk':'neutral',
+  'sky.com':'neutral','metro.co.uk':'neutral',
+  'channel4.com':'positive','huffingtonpost.co.uk':'positive','vice.com':'positive',
+  // LGBTQ+ and trans-led media
+  'pinknews.co.uk':'supportive','attitude.co.uk':'supportive','divamag.co.uk':'supportive',
+  'them.us':'supportive','transvitae.com':'supportive','transgenderfeed.com':'supportive',
+  'translash.org':'supportive','erininthemorning.com':'supportive','assignedmedia.org':'supportive',
+  // Advocacy orgs
+  'transactual.org.uk':'supportive','stonewall.org.uk':'supportive','transequality.org':'supportive',
+  'transgenderlawcenter.org':'supportive','glaad.org':'supportive','tgeu.org':'supportive',
+  'gate.ngo':'supportive',
+};
+
+const SOURCE_NAMES: Record<string, string> = {
+  'dailymail.co.uk':'The Daily Mail','telegraph.co.uk':'The Daily Telegraph',
+  'thesun.co.uk':'The Sun','spectator.co.uk':'The Spectator','gbnews.com':'GB News',
+  'talk.tv':'TalkTV','thetimes.co.uk':'The Times','express.co.uk':'Daily Express',
+  'theguardian.com':'The Guardian','independent.co.uk':'The Independent',
+  'mirror.co.uk':'The Mirror','inews.co.uk':'The i','bbc.co.uk':'BBC News',
+  'channel4.com':'Channel 4 News','itv.com':'ITV News','sky.com':'Sky News',
+  'metro.co.uk':'Metro','huffingtonpost.co.uk':'HuffPost UK','vice.com':'Vice UK',
+  'pinknews.co.uk':'Pink News','attitude.co.uk':'Attitude','divamag.co.uk':'DIVA Magazine',
+  'transactual.org.uk':'TransActual','stonewall.org.uk':'Stonewall',
+  'transvitae.com':'TransVitae','transgenderfeed.com':'Transgender Feed','translash.org':'TransLash',
+  'erininthemorning.com':'Erin in the Morning','assignedmedia.org':'Assigned Media',
+  'transequality.org':'Trans Equality','transgenderlawcenter.org':'Trans Law Center',
+  'glaad.org':'GLAAD','them.us':'Them','tgeu.org':'TGEU','gate.ngo':'GATE Global',
+};
+
+const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
+  'BBC News': 'bbc.co.uk', 'BBC Trans Coverage': 'bbc.co.uk',
+  'The Guardian': 'theguardian.com', 'Guardian Trans': 'theguardian.com',
+  'The Independent': 'independent.co.uk',
+  'Sky News': 'sky.com',
+  'Channel 4 News': 'channel4.com',
+  'The Times': 'thetimes.co.uk', 'Times Trans': 'thetimes.co.uk',
+  'Daily Mail': 'dailymail.co.uk', 'Mail Trans': 'dailymail.co.uk',
+  'The Telegraph': 'telegraph.co.uk',
+  'The Sun': 'thesun.co.uk',
+  'GB News': 'gbnews.com',
+  'Pink News': 'pinknews.co.uk', 'PinkNews': 'pinknews.co.uk',
+  'The Mirror': 'mirror.co.uk',
+  'Metro': 'metro.co.uk',
+  'The Spectator': 'spectator.co.uk',
+  'ITV News': 'itv.com',
+  'The Times': 'thetimes.co.uk',
+  'Daily Mail': 'dailymail.co.uk',
+  'The Telegraph': 'telegraph.co.uk',
+  'The Sun': 'thesun.co.uk',
+  'GB News': 'gbnews.com',
+  'Daily Mirror': 'mirror.co.uk',
+  'The Spectator': 'spectator.co.uk',
+  'Metro': 'metro.co.uk',
+  'Sky News': 'sky.com',
+  'Channel 4 News': 'channel4.com',
+  'The Times Trans': 'thetimes.co.uk',
+  'The Telegraph Trans': 'telegraph.co.uk',
+  'Daily Express': 'express.co.uk',
+  'The i': 'inews.co.uk',
+  'HuffPost UK': 'huffingtonpost.co.uk',
+  'Metro Trans': 'metro.co.uk',
+  'TalkTV': 'talk.tv',
+  'TransVitae': 'transvitae.com',
+  'Transgender Feed': 'transgenderfeed.com',
+  'TransLash': 'translash.org',
+  'Assigned Media': 'assignedmedia.org',
+  'Trans Equality': 'transequality.org',
+  'Trans Law Center': 'transgenderlawcenter.org',
+  'GLAAD': 'glaad.org',
+  'Them': 'them.us',
+  'TransActual UK': 'transactual.org.uk',
+  'TGEU News': 'tgeu.org',
+  'GATE Global': 'gate.ngo',
+  'Guardian Transgender': 'theguardian.com',
+  'Independent Trans': 'independent.co.uk',
+};
+
+function extractBiasDomain(url: string, sourceName?: string): string | null {
+  // Try source name map first (handles Google News redirects)
+  if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
+    return BIAS_SOURCE_NAME_MAP[sourceName];
+  }
+  // Fall back to URL parsing
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, '');
+    for (const k of BIAS_SOURCE_REGISTRY) {
+      if (h === k || h.endsWith('.' + k)) return k;
+    }
+    return null;
+  } catch { return null; }
+}
+
+function biasScoreToLabel(score: number): string {
+  if (score <= 20) return 'hostile';
+  if (score <= 40) return 'negative';
+  if (score <= 60) return 'neutral';
+  if (score <= 80) return 'positive';
+  return 'supportive';
+}
+
+function simpleHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(16).padStart(8, '0');
+}
+
+async function scoreAndIngestBias(item: { link: string; title: string; source: string; publishedAt: number }): Promise<void> {
+  const url = item.link ?? '';
+  const domain = extractBiasDomain(url, item.source);
+  if (!domain) return;
+  // Skip empty/placeholder titles — just the source name or too short to score meaningfully
+  const titleClean = item.title.trim();
+  if (titleClean.length < 20) return;
+  if (titleClean === item.source || titleClean === `- ${item.source}`) return;
+  if (/^-\s*$/.test(titleClean)) return;
+
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) return;
+
+  try {
+    // Score via Bedrock
+    const bedrock = new BedrockRuntimeClient({ region: 'eu-west-1' });
+    const prompt = `You are a media bias analyst specialising in UK trans rights coverage.
+
+STEP 1 — Relevance:
+Mark relevant=true if the article is about transgender or non-binary people, gender identity, trans rights/policy, gender-critical activism, or directly related issues (Cass Review, GRA, puberty blockers, gender clinics, trans athletes, conversion therapy, EHRC trans guidance, single-sex spaces, gender recognition).
+
+If the HEADLINE explicitly mentions "trans", "transgender", "non-binary", "gender identity", "gender-critical", or any of the above topics → relevant=true.
+
+Mark relevant=false ONLY if there is no trans/gender content at all (general entertainment, celebrity gossip without trans angle, general politics/sport, LGB-only coverage with no trans dimension).
+
+When in doubt, mark relevant=true.
+
+STEP 2 — Bias scoring (only if relevant=true):
+0-20  = hostile    (misgendering, deadnaming, "groomer" framing, biological essentialism used to deny rights)
+21-40 = negative   (sceptical framing, "debate" language, gender-critical voices given primary platform)
+41-60 = neutral    (factual reporting, balanced, no strong framing)
+61-80 = positive   (inclusive language, trans voices quoted, affirming framing)
+81-100 = supportive (trans-led perspective, advocacy-adjacent, explicitly affirmative)
+
+Title: ${item.title}
+
+Respond ONLY with valid JSON, no markdown:
+{"relevant": true|false, "score": <integer 0-100 if relevant else null>, "reason": "<one sentence max 20 words>"}`;
+
+    const bedrockResult = await Promise.race([
+      bedrock.send(new InvokeModelCommand({
+        modelId: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 120,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      })),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('bedrock_timeout')), 10_000)),
+    ]);
+
+    const raw = JSON.parse(new TextDecoder().decode((bedrockResult as any).body));
+    const rawText = (raw.content?.[0]?.text ?? '').trim().replace(/^```json\s*/,'').replace(/```\s*$/,'').trim();
+    const parsed = JSON.parse(rawText);
+    const score = Math.max(0, Math.min(100, Math.round(parsed.score)));
+    const label = biasScoreToLabel(score);
+    const reason = parsed.reason ?? '';
+
+    // Ingest into Redis
+    const redis = createRedisClient({ url: redisUrl });
+    await redis.connect();
+
+    // Submit to Internet Archive — fire request but don't block on response
+    fetch(`https://web.archive.org/save/${encodeURIComponent(url)}`, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
+
+    const archiveUrl = `https://web.archive.org/web/*/${url}`;
+
+    const record = JSON.stringify({
+      id: simpleHash(url),
+      url,
+      archiveUrl,
+      title: item.title,
+      publishedAt: new Date(item.publishedAt).toISOString(),
+      domain,
+      score,
+      label,
+      reason,
+      scoredAt: new Date().toISOString(),
+    });
+
+    const articlesKey = `media:source:${domain}:articles`;
+    const metaKey     = `media:source:${domain}:meta`;
+    const dedupKey    = `media:dedup:${simpleHash(url)}`;
+
+    // Skip if Bedrock flagged article as not trans-related
+    if (parsed.relevant === false) { await redis.disconnect(); return; }
+    // Skip if already scored this article
+    const alreadyScored = await redis.get(dedupKey);
+    if (alreadyScored) { await redis.disconnect(); return; }
+
+    await redis.set(dedupKey, '1', { EX: 60 * 60 * 24 * 7 }); // 7-day dedup window
+    await redis.lPush(articlesKey, record);
+    await redis.lTrim(articlesKey, 0, 99);
+
+    const meta = await redis.hGetAll(metaKey);
+    let prevTotal = parseInt(meta?.totalScore  ?? '0', 10);
+    let prevCount = parseInt(meta?.articleCount ?? '0', 10);
+    // Reset corrupted meta: totalScore=0 with high articleCount means pre-fix bad state
+    if (prevCount > 5 && prevTotal === 0) { prevTotal = 0; prevCount = 0; }
+    const newCount  = prevCount + 1;
+    const newTotal  = prevTotal + score;
+    const avgScore  = Math.round(newTotal / newCount);
+
+    await redis.hSet(metaKey, {
+      name:          SOURCE_NAMES[domain] ?? domain,
+      domain,
+      editorialBias: BIAS_EDITORIAL[domain] ?? 'neutral',
+      articleCount:  String(newCount),
+      totalScore:    String(newTotal),
+      avgScore:      String(avgScore),
+      avgLabel:      biasScoreToLabel(avgScore),
+      lastSeenAt:    new Date(item.publishedAt).toISOString(),
+      updatedAt:     new Date().toISOString(),
+    });
+
+    await redis.sAdd('media:bias:index', domain);
+    await redis.disconnect();
+
+  } catch (err) {
+    console.warn('[bias] score/ingest failed for', domain, (err as Error).message);
+  }
+}

@@ -111,6 +111,20 @@ var VARIANT_FEEDS = {
     ],
     community: [
       { name: "PinkNews", url: "https://www.thepinknews.com/feed/" },
+      { name: "TransVitae", url: "https://www.transvitae.com/category/news/feed/" },
+      { name: "Transgender Feed", url: "https://transgenderfeed.com/feed/" },
+      { name: "TransLash", url: "https://translash.org/articles/feed/" },
+      { name: "Erin in the Morning", url: "https://www.erininthemorning.com/feed" },
+      { name: "Assigned Media", url: "https://www.assignedmedia.org/feed" },
+      { name: "Trans Equality", url: "https://transequality.org/blog/feed" },
+      { name: "Trans Law Center", url: "https://transgenderlawcenter.org/feed" },
+      { name: "GLAAD", url: "https://glaad.org/feed/" },
+      { name: "Them", url: "https://www.them.us/feed/rss" },
+      { name: "TransActual UK", url: "https://transactual.org.uk/feed/" },
+      { name: "TGEU News", url: "https://tgeu.org/feed/" },
+      { name: "GATE Global", url: "https://gate.ngo/feed/" },
+      { name: "Guardian Transgender", url: "https://www.theguardian.com/society/transgender/rss" },
+      { name: "Independent Trans", url: "https://www.independent.co.uk/topic/transgender/rss" },
       { name: "LGBTQ Nation", url: "https://www.lgbtqnation.com/feed/" },
       { name: "Them", url: "https://www.them.us/feed/rss" },
       { name: "Xtra Magazine", url: "https://xtramagazine.com/feed" },
@@ -141,8 +155,24 @@ var VARIANT_FEEDS = {
       { name: "BBC News", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:bbc.co.uk when:3d') },
       { name: "The Guardian", url: gnGB('(transgender OR "trans rights") site:theguardian.com when:3d') },
       { name: "The Independent", url: gnGB('(transgender OR "trans rights") site:independent.co.uk when:3d') },
-      { name: "Sky News", url: gnGB('(transgender OR "trans rights") site:news.sky.com when:3d') },
-      { name: "Channel 4 News", url: gnGB('(transgender OR "trans rights") site:channel4.com when:7d') }
+      { name: "Sky News", url: gnGB('(transgender OR "trans rights") site:news.sky.com when:30d') },
+      { name: "Channel 4 News", url: gnGB('(transgender OR "trans rights") site:channel4.com when:30d') },
+      { name: "The Times", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:thetimes.co.uk when:30d') },
+      { name: "Daily Mail", url: gnGB('(transgender OR "trans rights") site:dailymail.co.uk when:3d') },
+      { name: "The Telegraph", url: gnGB('(transgender OR "trans rights") site:telegraph.co.uk when:30d') },
+      { name: "The Sun", url: gnGB('(transgender OR "trans rights") site:thesun.co.uk when:3d') },
+      { name: "GB News", url: gnGB('(transgender OR "trans rights") site:gbnews.com when:3d') },
+      { name: "Daily Mirror", url: gnGB('(transgender OR "trans rights") site:mirror.co.uk when:3d') },
+      { name: "The Spectator", url: gnGB('(transgender OR "trans rights") site:spectator.co.uk when:30d') },
+      { name: "The Times Trans", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:thetimes.co.uk when:30d') },
+      { name: "The Telegraph Trans", url: gnGB('(transgender OR "trans rights") site:telegraph.co.uk when:30d') },
+      { name: "Daily Express", url: gnGB('(transgender OR "trans rights") site:express.co.uk when:30d') },
+      { name: "The i", url: gnGB('(transgender OR "trans rights") site:inews.co.uk when:30d') },
+      { name: "HuffPost UK", url: gnGB('(transgender OR "trans rights") site:huffingtonpost.co.uk when:30d') },
+      { name: "Metro Trans", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:30d') },
+      { name: "TalkTV", url: gnGB('(transgender OR "trans rights") site:talk.tv when:30d') },
+      { name: "ITV News", url: gnGB('(transgender OR "trans rights") site:itv.com when:3d') },
+      { name: "Metro", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:3d') }
     ],
     wins: [
       { name: "Trans Wins", url: gnGB('(transgender OR "trans rights") (wins OR victory OR "first trans" OR milestone OR landmark) when:7d') },
@@ -414,8 +444,7 @@ var DIGEST_ACCUMULATOR_KEY = (variant, lang) => `digest:acc:v1:${variant}:${lang
 
 // news-digest/_trans-keywords.ts
 var IDENTITY_TERMS = [
-  "trans",
-  // standalone — word-boundary regex prevents 'transit'/'transparent' matching
+  // 'trans' bare keyword removed — \btrans\b matches 'trans-Atlantic', 'trans-Pennine' etc via hyphen word boundary
   "transgender",
   "trans rights",
   "gender identity",
@@ -593,6 +622,8 @@ async function aiFilterTransRelevant(items) {
 }
 
 // news-digest/index.ts
+var import_client_bedrock_runtime = require("@aws-sdk/client-bedrock-runtime");
+var import_redis3 = require("redis");
 var markNoCacheResponse = (_req) => {
 };
 var CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -912,7 +943,11 @@ async function writeStoryTracking(items, variant, lang, hashes) {
     }
     await runRedisPipeline(commands);
   }
-  await runRedisPipeline([["EXPIRE", accKey, DIGEST_ACCUMULATOR_TTL]]);
+  const cutoff = String(Date.now() - DIGEST_ACCUMULATOR_TTL * 1e3);
+  await runRedisPipeline([
+    ["ZREMRANGEBYSCORE", accKey, "-inf", cutoff],
+    ["EXPIRE", accKey, DIGEST_ACCUMULATOR_TTL]
+  ]);
 }
 async function buildDigest(variant, lang) {
   const feedsByCategory = VARIANT_FEEDS[variant] ?? {};
@@ -1029,6 +1064,13 @@ async function buildDigest(variant, lang) {
         }
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
+      const biasTargets = filteredSliced.filter((item) => item.link);
+      if (biasTargets.length > 0) {
+        await Promise.race([
+          Promise.allSettled(biasTargets.map((item) => scoreAndIngestBias(item))),
+          new Promise((resolve) => setTimeout(resolve, 2e4))
+        ]);
+      }
       categories[category] = {
         items: filteredSliced.map((item) => {
           const hash = item.titleHash;
@@ -1092,6 +1134,303 @@ var handler = async (event) => {
     return { statusCode: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(fallback) };
   }
 };
+var BIAS_SOURCE_REGISTRY = /* @__PURE__ */ new Set([
+  "dailymail.co.uk",
+  "telegraph.co.uk",
+  "thesun.co.uk",
+  "spectator.co.uk",
+  "gbnews.com",
+  "talk.tv",
+  "thetimes.co.uk",
+  "express.co.uk",
+  "theguardian.com",
+  "independent.co.uk",
+  "mirror.co.uk",
+  "inews.co.uk",
+  "bbc.co.uk",
+  "channel4.com",
+  "itv.com",
+  "sky.com",
+  "metro.co.uk",
+  "huffingtonpost.co.uk",
+  "vice.com",
+  "pinknews.co.uk",
+  "attitude.co.uk",
+  "divamag.co.uk",
+  "transactual.org.uk",
+  "stonewall.org.uk"
+]);
+var BIAS_EDITORIAL = {
+  // UK press
+  "dailymail.co.uk": "hostile",
+  "telegraph.co.uk": "hostile",
+  "thesun.co.uk": "hostile",
+  "spectator.co.uk": "hostile",
+  "gbnews.com": "hostile",
+  "talk.tv": "hostile",
+  "thetimes.co.uk": "hostile",
+  "express.co.uk": "negative",
+  "theguardian.com": "negative",
+  "bbc.co.uk": "negative",
+  "itv.com": "negative",
+  "independent.co.uk": "neutral",
+  "mirror.co.uk": "neutral",
+  "inews.co.uk": "neutral",
+  "sky.com": "neutral",
+  "metro.co.uk": "neutral",
+  "channel4.com": "positive",
+  "huffingtonpost.co.uk": "positive",
+  "vice.com": "positive",
+  // LGBTQ+ and trans-led media
+  "pinknews.co.uk": "supportive",
+  "attitude.co.uk": "supportive",
+  "divamag.co.uk": "supportive",
+  "them.us": "supportive",
+  "transvitae.com": "supportive",
+  "transgenderfeed.com": "supportive",
+  "translash.org": "supportive",
+  "erininthemorning.com": "supportive",
+  "assignedmedia.org": "supportive",
+  // Advocacy orgs
+  "transactual.org.uk": "supportive",
+  "stonewall.org.uk": "supportive",
+  "transequality.org": "supportive",
+  "transgenderlawcenter.org": "supportive",
+  "glaad.org": "supportive",
+  "tgeu.org": "supportive",
+  "gate.ngo": "supportive"
+};
+var SOURCE_NAMES = {
+  "dailymail.co.uk": "The Daily Mail",
+  "telegraph.co.uk": "The Daily Telegraph",
+  "thesun.co.uk": "The Sun",
+  "spectator.co.uk": "The Spectator",
+  "gbnews.com": "GB News",
+  "talk.tv": "TalkTV",
+  "thetimes.co.uk": "The Times",
+  "express.co.uk": "Daily Express",
+  "theguardian.com": "The Guardian",
+  "independent.co.uk": "The Independent",
+  "mirror.co.uk": "The Mirror",
+  "inews.co.uk": "The i",
+  "bbc.co.uk": "BBC News",
+  "channel4.com": "Channel 4 News",
+  "itv.com": "ITV News",
+  "sky.com": "Sky News",
+  "metro.co.uk": "Metro",
+  "huffingtonpost.co.uk": "HuffPost UK",
+  "vice.com": "Vice UK",
+  "pinknews.co.uk": "Pink News",
+  "attitude.co.uk": "Attitude",
+  "divamag.co.uk": "DIVA Magazine",
+  "transactual.org.uk": "TransActual",
+  "stonewall.org.uk": "Stonewall",
+  "transvitae.com": "TransVitae",
+  "transgenderfeed.com": "Transgender Feed",
+  "translash.org": "TransLash",
+  "erininthemorning.com": "Erin in the Morning",
+  "assignedmedia.org": "Assigned Media",
+  "transequality.org": "Trans Equality",
+  "transgenderlawcenter.org": "Trans Law Center",
+  "glaad.org": "GLAAD",
+  "them.us": "Them",
+  "tgeu.org": "TGEU",
+  "gate.ngo": "GATE Global"
+};
+var BIAS_SOURCE_NAME_MAP = {
+  "BBC News": "bbc.co.uk",
+  "BBC Trans Coverage": "bbc.co.uk",
+  "The Guardian": "theguardian.com",
+  "Guardian Trans": "theguardian.com",
+  "The Independent": "independent.co.uk",
+  "Sky News": "sky.com",
+  "Channel 4 News": "channel4.com",
+  "The Times": "thetimes.co.uk",
+  "Times Trans": "thetimes.co.uk",
+  "Daily Mail": "dailymail.co.uk",
+  "Mail Trans": "dailymail.co.uk",
+  "The Telegraph": "telegraph.co.uk",
+  "The Sun": "thesun.co.uk",
+  "GB News": "gbnews.com",
+  "Pink News": "pinknews.co.uk",
+  "PinkNews": "pinknews.co.uk",
+  "The Mirror": "mirror.co.uk",
+  "Metro": "metro.co.uk",
+  "The Spectator": "spectator.co.uk",
+  "ITV News": "itv.com",
+  "The Times": "thetimes.co.uk",
+  "Daily Mail": "dailymail.co.uk",
+  "The Telegraph": "telegraph.co.uk",
+  "The Sun": "thesun.co.uk",
+  "GB News": "gbnews.com",
+  "Daily Mirror": "mirror.co.uk",
+  "The Spectator": "spectator.co.uk",
+  "Metro": "metro.co.uk",
+  "Sky News": "sky.com",
+  "Channel 4 News": "channel4.com",
+  "The Times Trans": "thetimes.co.uk",
+  "The Telegraph Trans": "telegraph.co.uk",
+  "Daily Express": "express.co.uk",
+  "The i": "inews.co.uk",
+  "HuffPost UK": "huffingtonpost.co.uk",
+  "Metro Trans": "metro.co.uk",
+  "TalkTV": "talk.tv",
+  "TransVitae": "transvitae.com",
+  "Transgender Feed": "transgenderfeed.com",
+  "TransLash": "translash.org",
+  "Assigned Media": "assignedmedia.org",
+  "Trans Equality": "transequality.org",
+  "Trans Law Center": "transgenderlawcenter.org",
+  "GLAAD": "glaad.org",
+  "Them": "them.us",
+  "TransActual UK": "transactual.org.uk",
+  "TGEU News": "tgeu.org",
+  "GATE Global": "gate.ngo",
+  "Guardian Transgender": "theguardian.com",
+  "Independent Trans": "independent.co.uk"
+};
+function extractBiasDomain(url, sourceName) {
+  if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
+    return BIAS_SOURCE_NAME_MAP[sourceName];
+  }
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, "");
+    for (const k of BIAS_SOURCE_REGISTRY) {
+      if (h === k || h.endsWith("." + k)) return k;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function biasScoreToLabel(score) {
+  if (score <= 20) return "hostile";
+  if (score <= 40) return "negative";
+  if (score <= 60) return "neutral";
+  if (score <= 80) return "positive";
+  return "supportive";
+}
+function simpleHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0;
+  return Math.abs(h).toString(16).padStart(8, "0");
+}
+async function scoreAndIngestBias(item) {
+  const url = item.link ?? "";
+  const domain = extractBiasDomain(url, item.source);
+  if (!domain) return;
+  const titleClean = item.title.trim();
+  if (titleClean.length < 20) return;
+  if (titleClean === item.source || titleClean === `- ${item.source}`) return;
+  if (/^-\s*$/.test(titleClean)) return;
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) return;
+  try {
+    const bedrock = new import_client_bedrock_runtime.BedrockRuntimeClient({ region: "eu-west-1" });
+    const prompt = `You are a media bias analyst specialising in UK trans rights coverage.
+
+STEP 1 \u2014 Relevance:
+Mark relevant=true if the article is about transgender or non-binary people, gender identity, trans rights/policy, gender-critical activism, or directly related issues (Cass Review, GRA, puberty blockers, gender clinics, trans athletes, conversion therapy, EHRC trans guidance, single-sex spaces, gender recognition).
+
+If the HEADLINE explicitly mentions "trans", "transgender", "non-binary", "gender identity", "gender-critical", or any of the above topics \u2192 relevant=true.
+
+Mark relevant=false ONLY if there is no trans/gender content at all (general entertainment, celebrity gossip without trans angle, general politics/sport, LGB-only coverage with no trans dimension).
+
+When in doubt, mark relevant=true.
+
+STEP 2 \u2014 Bias scoring (only if relevant=true):
+0-20  = hostile    (misgendering, deadnaming, "groomer" framing, biological essentialism used to deny rights)
+21-40 = negative   (sceptical framing, "debate" language, gender-critical voices given primary platform)
+41-60 = neutral    (factual reporting, balanced, no strong framing)
+61-80 = positive   (inclusive language, trans voices quoted, affirming framing)
+81-100 = supportive (trans-led perspective, advocacy-adjacent, explicitly affirmative)
+
+Title: ${item.title}
+
+Respond ONLY with valid JSON, no markdown:
+{"relevant": true|false, "score": <integer 0-100 if relevant else null>, "reason": "<one sentence max 20 words>"}`;
+    const bedrockResult = await Promise.race([
+      bedrock.send(new import_client_bedrock_runtime.InvokeModelCommand({
+        modelId: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+          anthropic_version: "bedrock-2023-05-31",
+          max_tokens: 120,
+          messages: [{ role: "user", content: prompt }]
+        })
+      })),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("bedrock_timeout")), 1e4))
+    ]);
+    const raw = JSON.parse(new TextDecoder().decode(bedrockResult.body));
+    const rawText = (raw.content?.[0]?.text ?? "").trim().replace(/^```json\s*/, "").replace(/```\s*$/, "").trim();
+    const parsed = JSON.parse(rawText);
+    const score = Math.max(0, Math.min(100, Math.round(parsed.score)));
+    const label = biasScoreToLabel(score);
+    const reason = parsed.reason ?? "";
+    const redis = (0, import_redis3.createClient)({ url: redisUrl });
+    await redis.connect();
+    fetch(`https://web.archive.org/save/${encodeURIComponent(url)}`, {
+      method: "GET",
+      redirect: "manual",
+      signal: AbortSignal.timeout(3e3)
+    }).catch(() => {
+    });
+    const archiveUrl = `https://web.archive.org/web/*/${url}`;
+    const record = JSON.stringify({
+      id: simpleHash(url),
+      url,
+      archiveUrl,
+      title: item.title,
+      publishedAt: new Date(item.publishedAt).toISOString(),
+      domain,
+      score,
+      label,
+      reason,
+      scoredAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    const articlesKey = `media:source:${domain}:articles`;
+    const metaKey = `media:source:${domain}:meta`;
+    const dedupKey = `media:dedup:${simpleHash(url)}`;
+    if (parsed.relevant === false) {
+      await redis.disconnect();
+      return;
+    }
+    const alreadyScored = await redis.get(dedupKey);
+    if (alreadyScored) {
+      await redis.disconnect();
+      return;
+    }
+    await redis.set(dedupKey, "1", { EX: 60 * 60 * 24 * 7 });
+    await redis.lPush(articlesKey, record);
+    await redis.lTrim(articlesKey, 0, 99);
+    const meta = await redis.hGetAll(metaKey);
+    let prevTotal = parseInt(meta?.totalScore ?? "0", 10);
+    let prevCount = parseInt(meta?.articleCount ?? "0", 10);
+    if (prevCount > 5 && prevTotal === 0) {
+      prevTotal = 0;
+      prevCount = 0;
+    }
+    const newCount = prevCount + 1;
+    const newTotal = prevTotal + score;
+    const avgScore = Math.round(newTotal / newCount);
+    await redis.hSet(metaKey, {
+      name: SOURCE_NAMES[domain] ?? domain,
+      domain,
+      editorialBias: BIAS_EDITORIAL[domain] ?? "neutral",
+      articleCount: String(newCount),
+      totalScore: String(newTotal),
+      avgScore: String(avgScore),
+      avgLabel: biasScoreToLabel(avgScore),
+      lastSeenAt: new Date(item.publishedAt).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    await redis.sAdd("media:bias:index", domain);
+    await redis.disconnect();
+  } catch (err) {
+    console.warn("[bias] score/ingest failed for", domain, err.message);
+  }
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   handler,

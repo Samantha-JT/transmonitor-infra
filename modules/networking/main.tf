@@ -9,6 +9,8 @@ locals {
   azs = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
+# ── VPC ───────────────────────────────────────────────────────────────────────
+
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
@@ -16,6 +18,8 @@ resource "aws_vpc" "main" {
 
   tags = { Name = "${var.name_prefix}-vpc" }
 }
+
+# ── Subnets ───────────────────────────────────────────────────────────────────
 
 resource "aws_subnet" "private" {
   count             = 2
@@ -36,22 +40,32 @@ resource "aws_subnet" "public" {
   tags = { Name = "${var.name_prefix}-public-${count.index}" }
 }
 
+# ── Internet Gateway ──────────────────────────────────────────────────────────
+
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
   tags   = { Name = "${var.name_prefix}-igw" }
 }
 
+# ── NAT Gateways (one per AZ for HA) ─────────────────────────────────────────
+# Two NAT GWs (~$32/mo total) prevents all VPC-attached Lambdas losing egress
+# if a single AZ has an outage.
+
 resource "aws_eip" "nat" {
+  count  = 2
   domain = "vpc"
-  tags   = { Name = "${var.name_prefix}-nat-eip" }
+  tags   = { Name = "${var.name_prefix}-nat-eip-${count.index}" }
 }
 
 resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
-  tags          = { Name = "${var.name_prefix}-nat" }
+  count         = 2
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = aws_subnet.public[count.index].id
+  tags          = { Name = "${var.name_prefix}-nat-${count.index}" }
   depends_on    = [aws_internet_gateway.main]
 }
+
+# ── Route Tables ──────────────────────────────────────────────────────────────
 
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
@@ -68,20 +82,24 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# Each private subnet gets its own route table pointing to its AZ-local NAT GW.
 resource "aws_route_table" "private" {
+  count  = 2
   vpc_id = aws_vpc.main.id
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
+    nat_gateway_id = aws_nat_gateway.main[count.index].id
   }
-  tags = { Name = "${var.name_prefix}-private-rt" }
+  tags = { Name = "${var.name_prefix}-private-rt-${count.index}" }
 }
 
 resource "aws_route_table_association" "private" {
   count          = 2
   subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private[count.index].id
 }
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
 
 output "vpc_id"             { value = aws_vpc.main.id }
 output "private_subnet_ids" { value = aws_subnet.private[*].id }

@@ -6,7 +6,6 @@ on:
 
 env:
   AWS_REGION: eu-west-1
-  TF_VAR_FILE: transmonitor.tfvars
 
 jobs:
   deploy:
@@ -26,16 +25,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build Lambda handlers
+        run: npm run build:lambda
+
       - name: Build Vite frontend
         run: npm run build
         env:
           VITE_VARIANT: trans
           VITE_API_BASE: https://${{ secrets.HOSTNAME }}/api
-
-      - name: Build Lambda handlers
-        run: npm run build:lambda
-        # Assumes package.json has a build:lambda script that tsc-compiles
-        # lambda_src/* and outputs to lambda_src/*/dist/
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -46,42 +43,54 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~1.8"
+          terraform_version: "~1.10"
 
       - name: Write tfvars
+        working-directory: transmonitor-infra
         run: |
-          cat > transmonitor-infra/transmonitor.tfvars <<EOF
-          aws_region           = "${{ env.AWS_REGION }}"
-          environment          = "prod"
-          cloudflare_api_token = "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          cloudflare_zone_id   = "${{ secrets.CLOUDFLARE_ZONE_ID }}"
-          hostname             = "${{ secrets.HOSTNAME }}"
-          origin_verify_secret = "${{ secrets.ORIGIN_VERIFY_SECRET }}"
-          groq_api_key         = "${{ secrets.GROQ_API_KEY }}"
-          openrouter_api_key   = "${{ secrets.OPENROUTER_API_KEY }}"
+          cat > transmonitor.tfvars <<EOF
+          aws_region            = "${{ env.AWS_REGION }}"
+          environment           = "prod"
+          cloudflare_api_token  = "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          cloudflare_zone_id    = "${{ secrets.CLOUDFLARE_ZONE_ID }}"
+          cloudflare_account_id = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+          hostname              = "${{ secrets.HOSTNAME }}"
+          origin_verify_secret  = "${{ secrets.ORIGIN_VERIFY_SECRET }}"
+          groq_api_key          = "${{ secrets.GROQ_API_KEY }}"
+          openrouter_api_key    = "${{ secrets.OPENROUTER_API_KEY }}"
           EOF
 
       - name: Terraform init
         working-directory: transmonitor-infra
         run: terraform init
 
+      - name: Terraform validate
+        working-directory: transmonitor-infra
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: transmonitor-infra
+        run: terraform plan -var-file=transmonitor.tfvars -out=tfplan
+
       - name: Terraform apply
         working-directory: transmonitor-infra
-        run: terraform apply -auto-approve -var-file=transmonitor.tfvars
+        run: terraform apply tfplan
 
       - name: Sync frontend to S3
+        working-directory: transmonitor-infra
         run: |
-          BUCKET=$(cd transmonitor-infra && terraform output -raw s3_bucket_name)
-          aws s3 sync dist/ s3://$BUCKET/ \
+          BUCKET=$(terraform -chdir=. output -raw s3_bucket_name)
+          echo "Deploying to s3://$BUCKET"
+          aws s3 sync ../dist/ s3://$BUCKET/ \
             --delete \
             --cache-control "public,max-age=31536000,immutable" \
             --exclude "index.html"
-          aws s3 cp dist/index.html s3://$BUCKET/index.html \
+          aws s3 cp ../dist/index.html s3://$BUCKET/index.html \
             --cache-control "no-cache,no-store,must-revalidate"
 
       - name: Purge Cloudflare cache
         run: |
-          curl -X POST \
+          curl --fail -X POST \
             "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
             -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
             -H "Content-Type: application/json" \

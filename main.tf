@@ -13,11 +13,6 @@ module "ssm" {
   name_prefix          = local.name_prefix
   groq_api_key         = var.groq_api_key
   openrouter_api_key   = var.openrouter_api_key
-  acled_email          = var.acled_email
-  acled_password       = var.acled_password
-  finnhub_api_key      = var.finnhub_api_key
-  fred_api_key         = var.fred_api_key
-  nasa_firms_api_key   = var.nasa_firms_api_key
   origin_verify_secret = var.origin_verify_secret
 }
 
@@ -35,16 +30,6 @@ module "cache" {
 }
 
 module "lambdas" {
-  extra_secrets = {
-    GROQ_API_KEY       = var.groq_api_key
-    OPENROUTER_API_KEY = var.openrouter_api_key
-  }
-  extra_env = {
-    UPSTASH_REDIS_REST_URL   = var.upstash_redis_rest_url
-    UPSTASH_REDIS_REST_TOKEN = var.upstash_redis_rest_token
-    GROQ_API_KEY             = var.groq_api_key
-    OPENROUTER_API_KEY       = var.openrouter_api_key
-  }
   source               = "./modules/lambdas"
   name_prefix          = local.name_prefix
   aws_region           = var.aws_region
@@ -74,8 +59,8 @@ module "scheduler" {
 }
 
 module "cloudflare" {
-  account_id           = var.cloudflare_account_id
   source               = "./modules/cloudflare"
+  account_id           = var.cloudflare_account_id
   zone_id              = var.cloudflare_zone_id
   hostname             = var.hostname
   api_gateway_url      = module.api_gateway.invoke_url

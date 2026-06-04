@@ -8,7 +8,7 @@
 
 // Core identity terminology. Include in almost every query.
 export const IDENTITY_TERMS = [
-  'trans',                          // standalone — word-boundary regex prevents 'transit'/'transparent' matching
+  // 'trans' bare keyword removed — \btrans\b matches 'trans-Atlantic', 'trans-Pennine' etc via hyphen word boundary
   'transgender',
   'trans rights',
   'gender identity',

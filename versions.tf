@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10"
 
   required_providers {
     aws = {
@@ -17,11 +17,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "transmonitor-tfstate"
-    key            = "transmonitor/terraform.tfstate"
-    region         = "eu-west-1"
-    use_lockfile   = true
-    encrypt        = true
+    bucket       = "transmonitor-tfstate"
+    key          = "transmonitor/terraform.tfstate"
+    region       = "eu-west-1"
+    use_lockfile = true
+    encrypt      = true
   }
 }
 
