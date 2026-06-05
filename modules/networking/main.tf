@@ -52,15 +52,15 @@ resource "aws_internet_gateway" "main" {
 # if a single AZ has an outage.
 
 resource "aws_eip" "nat" {
-  count  = 2
+  count  = 1
   domain = "vpc"
   tags   = { Name = "${var.name_prefix}-nat-eip-${count.index}" }
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = 2
-  allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
+  count         = 1
+  allocation_id = aws_eip.nat[0].id
+  subnet_id     = aws_subnet.public[1].id
   tags          = { Name = "${var.name_prefix}-nat-${count.index}" }
   depends_on    = [aws_internet_gateway.main]
 }
@@ -82,13 +82,13 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# Each private subnet gets its own route table pointing to its AZ-local NAT GW.
+# Both private subnets route through the single NAT GW in eu-west-1b.
 resource "aws_route_table" "private" {
   count  = 2
   vpc_id = aws_vpc.main.id
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[count.index].id
+    nat_gateway_id = aws_nat_gateway.main[0].id
   }
   tags = { Name = "${var.name_prefix}-private-rt-${count.index}" }
 }
