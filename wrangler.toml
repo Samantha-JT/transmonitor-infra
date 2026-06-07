@@ -1,0 +1,23 @@
+name = "trans-news-com-security"
+main = "modules/cloudflare/security-worker.js"
+compatibility_date = "2024-01-01"
+workers_dev = false
+
+[[kv_namespaces]]
+binding = "SECURITY_KV"
+id = "f0f789b7ea1042b7894d1072ad346c40"
+preview_id = "f0f789b7ea1042b7894d1072ad346c40"
+
+[[services]]
+binding = "API_PROXY"
+service = "trans-news-com-api-proxy"
+
+[vars]
+CF_ZONE_ID     = "fb1dd68091c0bf026b4ff547fb38eb8e"
+HOSTNAME       = "trans-news.com"
+SCORE_ENDPOINT = "https://8soi33z3h9.execute-api.eu-west-1.amazonaws.com/security/score"
+
+# Set secrets via CLI (never commit):
+#   wrangler secret put CF_API_TOKEN
+#   wrangler secret put SLACK_WEBHOOK_URL
+#   wrangler secret put ORIGIN_VERIFY_SECRET
