@@ -37,7 +37,7 @@ const THRESHOLDS = {
 
 const BAD_ASNS = new Set([
   14061, 16276, 24940, 51167, 20473,
-  8100,  9009,  60068, 136907, 45102, 3257,
+  8100,  9009,  60068, 136907, 45102,
 ]);
 
 const BAD_ASN_ORG_PATTERNS = [
@@ -60,7 +60,6 @@ const SCANNER_PATHS = [
   /\.env\.(prod|staging|local|sample|old|dist|backup)/,
   /\/laravel/i,
   /\/workbox-[a-f0-9]+\.js$/,
-  /\/push-handler\.js$/,
   /\/sw\.js\.map$/,
   /\/xmlrpc\.php$/,
   /\/shell\.php/i,
