@@ -1,7 +1,7 @@
-variable "name_prefix"           {}
-variable "hostname"              {}
-variable "origin_verify_secret"  { sensitive = true }
-variable "lambda_invoke_arns"    { type = map(string) }
+variable "name_prefix" {}
+variable "hostname" {}
+variable "origin_verify_secret" { sensitive = true }
+variable "lambda_invoke_arns" { type = map(string) }
 variable "lambda_function_names" { type = map(string) }
 
 data "aws_caller_identity" "current" {}
@@ -151,15 +151,18 @@ locals {
     "GET /rights/{country}" = "trans_rights"
 
     # Trans Murder Monitoring
-    "GET /tmm/v1/get-data"              = "tmm_data"
-    "GET /media/v1/sources"            = "media_bias"
-    "GET /media/v1/source/{domain}"    = "media_bias"
+    "GET /tmm/v1/get-data"          = "tmm_data"
+    "GET /media/v1/sources"         = "media_bias"
+    "GET /media/v1/source/{domain}" = "media_bias"
 
     # RSS
     "GET /rss-proxy" = "rss_proxy"
 
     # Health
     "GET /health" = "health"
+
+    # Security scoring (called by Cloudflare security worker)
+    "POST /security/score" = "security_score"
   }
 
   lambda_keys = toset(values(local.routes))
@@ -197,4 +200,4 @@ resource "aws_lambda_permission" "api_gw" {
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 output "invoke_url" { value = aws_apigatewayv2_stage.default.invoke_url }
-output "api_id"     { value = aws_apigatewayv2_api.main.id }
+output "api_id" { value = aws_apigatewayv2_api.main.id }

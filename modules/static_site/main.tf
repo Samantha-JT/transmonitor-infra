@@ -1,5 +1,5 @@
 variable "name_prefix" {}
-variable "hostname"    {}
+variable "hostname" {}
 
 # ── Static site bucket (public read for S3 website hosting) ──────────────────
 
@@ -12,7 +12,7 @@ resource "aws_s3_bucket_website_configuration" "site" {
   bucket = aws_s3_bucket.site.id
 
   index_document { suffix = "index.html" }
-  error_document { key    = "index.html" }
+  error_document { key = "index.html" }
 }
 
 resource "aws_s3_bucket_public_access_block" "site" {
@@ -107,6 +107,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "digest_cache" {
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "bucket_name"        { value = aws_s3_bucket.site.id }
+output "bucket_name" { value = aws_s3_bucket.site.id }
 output "digest_bucket_name" { value = aws_s3_bucket.digest_cache.id }
-output "website_endpoint"   { value = aws_s3_bucket_website_configuration.site.website_endpoint }
+output "website_endpoint" { value = aws_s3_bucket_website_configuration.site.website_endpoint }

@@ -1,5 +1,5 @@
 variable "name_prefix" {}
-variable "aws_region"  {}
+variable "aws_region" {}
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -101,6 +101,6 @@ resource "aws_route_table_association" "private" {
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "vpc_id"             { value = aws_vpc.main.id }
+output "vpc_id" { value = aws_vpc.main.id }
 output "private_subnet_ids" { value = aws_subnet.private[*].id }
-output "public_subnet_ids"  { value = aws_subnet.public[*].id }
+output "public_subnet_ids" { value = aws_subnet.public[*].id }

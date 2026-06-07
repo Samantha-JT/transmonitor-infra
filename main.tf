@@ -11,7 +11,6 @@ module "networking" {
 module "ssm" {
   source               = "./modules/ssm"
   name_prefix          = local.name_prefix
-  groq_api_key         = var.groq_api_key
   openrouter_api_key   = var.openrouter_api_key
   origin_verify_secret = var.origin_verify_secret
 }
@@ -66,4 +65,11 @@ module "cloudflare" {
   api_gateway_url      = module.api_gateway.invoke_url
   s3_website_endpoint  = module.static_site.website_endpoint
   origin_verify_secret = var.origin_verify_secret
+  cf_api_token         = var.cloudflare_api_token
+}
+
+module "scraper" {
+  source      = "./modules/scraper"
+  name_prefix = local.name_prefix
+  subnet_id   = module.networking.private_subnet_ids[0]
 }

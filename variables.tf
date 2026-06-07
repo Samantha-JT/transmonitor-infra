@@ -33,14 +33,9 @@ variable "origin_verify_secret" {
   description = "Shared secret injected by Cloudflare Worker, validated by API GW to block direct invocation"
 }
 
-variable "groq_api_key" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
 variable "openrouter_api_key" {
   type      = string
   sensitive = true
   default   = ""
 }
+

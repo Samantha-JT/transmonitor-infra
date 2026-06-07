@@ -28,3 +28,4 @@ dist/
 *.env
 *.tfvars
 transmonitor.tfvars.old
+terraform.tfvars

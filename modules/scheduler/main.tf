@@ -1,6 +1,6 @@
-variable "name_prefix"                  {}
-variable "feed_ingestor_function_arn"   {}
-variable "feed_ingestor_function_name"  {}
+variable "name_prefix" {}
+variable "feed_ingestor_function_arn" {}
+variable "feed_ingestor_function_name" {}
 
 # ── EventBridge Scheduler (replaces legacy aws_cloudwatch_event_rule) ─────────
 # Uses the native Scheduler resource which supports retry policies and DLQs.

@@ -24,9 +24,11 @@ export default {
     }
 
     const staticTarget = new URL(url.pathname + url.search, "http://" + S3_ORIGIN);
+    const staticHeaders = new Headers(request.headers);
+    staticHeaders.set("host", S3_ORIGIN);
     const staticRequest = new Request(staticTarget.toString(), {
       method:  request.method,
-      headers: request.headers,
+      headers: staticHeaders,
     });
     const staticResponse = await fetch(staticRequest);
     const respHeaders    = new Headers(staticResponse.headers);

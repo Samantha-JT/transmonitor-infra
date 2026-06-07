@@ -4,11 +4,6 @@ variable "origin_verify_secret" {
   sensitive = true
 }
 
-variable "groq_api_key" {
-  sensitive = true
-  default   = ""
-}
-
 variable "openrouter_api_key" {
   sensitive = true
   default   = ""
@@ -22,15 +17,6 @@ resource "aws_ssm_parameter" "origin_verify_secret" {
   name      = "${local.prefix}/origin_verify_secret"
   type      = "SecureString"
   value     = var.origin_verify_secret
-  overwrite = true
-  lifecycle { ignore_changes = [value] }
-}
-
-resource "aws_ssm_parameter" "groq_api_key" {
-  count     = var.groq_api_key != "" ? 1 : 0
-  name      = "${local.prefix}/groq_api_key"
-  type      = "SecureString"
-  value     = var.groq_api_key
   overwrite = true
   lifecycle { ignore_changes = [value] }
 }

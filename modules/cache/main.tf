@@ -1,5 +1,5 @@
-variable "name_prefix"        {}
-variable "vpc_id"             {}
+variable "name_prefix" {}
+variable "vpc_id" {}
 variable "private_subnet_ids" { type = list(string) }
 
 resource "aws_security_group" "lambda_vpc" {
@@ -58,14 +58,14 @@ resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = "${var.name_prefix}-redis"
   description          = "TransMonitor Redis cache"
 
-  node_type            = "cache.t4g.micro"
-  num_cache_clusters   = 1
-  engine               = "redis"
-  engine_version       = "7.1"
-  port                 = 6379
+  node_type          = "cache.t4g.micro"
+  num_cache_clusters = 1
+  engine             = "redis"
+  engine_version     = "7.1"
+  port               = 6379
 
-  subnet_group_name    = aws_elasticache_subnet_group.redis.name
-  security_group_ids   = [aws_security_group.redis.id]
+  subnet_group_name  = aws_elasticache_subnet_group.redis.name
+  security_group_ids = [aws_security_group.redis.id]
 
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
@@ -79,5 +79,5 @@ resource "aws_elasticache_replication_group" "redis" {
   tags = { Name = "${var.name_prefix}-redis" }
 }
 
-output "endpoint"     { value = aws_elasticache_replication_group.redis.primary_endpoint_address }
+output "endpoint" { value = aws_elasticache_replication_group.redis.primary_endpoint_address }
 output "lambda_sg_id" { value = aws_security_group.lambda_vpc.id }

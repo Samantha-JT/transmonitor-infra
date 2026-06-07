@@ -13,5 +13,4 @@ hostname              = "trans-news.com"
 origin_verify_secret = "generate-a-strong-random-secret"
 
 # ── AI provider keys (stored as SSM SecureString; omit if unused) ─────────────
-groq_api_key       = ""   # https://console.groq.com
 openrouter_api_key = ""   # https://openrouter.ai

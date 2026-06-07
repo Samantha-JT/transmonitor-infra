@@ -80,18 +80,18 @@ resource "aws_iam_role_policy" "lambda_permissions" {
         ]
       },
       {
-        Sid      = "SSMParameterRead"
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter", "ssm:GetParametersByPath"]
+        Sid    = "SSMParameterRead"
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParametersByPath"]
         Resource = [
           "arn:aws:ssm:${local.region}:${local.account_id}:parameter${var.ssm_prefix}",
           "arn:aws:ssm:${local.region}:${local.account_id}:parameter${var.ssm_prefix}/*",
         ]
       },
       {
-        Sid    = "CloudWatchLogs"
-        Effect = "Allow"
-        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Sid      = "CloudWatchLogs"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "arn:aws:logs:*:${local.account_id}:*"
       },
       {
@@ -395,6 +395,7 @@ output "invoke_arns" {
     media_bias      = aws_lambda_function.media_bias.invoke_arn
     rss_proxy       = aws_lambda_function.rss_proxy.invoke_arn
     health          = aws_lambda_function.health.invoke_arn
+    security_score  = aws_lambda_function.security_score.invoke_arn
   }
 }
 
@@ -410,10 +411,11 @@ output "function_names" {
     media_bias      = aws_lambda_function.media_bias.function_name
     rss_proxy       = aws_lambda_function.rss_proxy.function_name
     health          = aws_lambda_function.health.function_name
+    security_score  = aws_lambda_function.security_score.function_name
   }
 }
 
-output "feed_ingestor_arn"  { value = aws_lambda_function.feed_ingestor.arn }
+output "feed_ingestor_arn" { value = aws_lambda_function.feed_ingestor.arn }
 output "feed_ingestor_name" { value = aws_lambda_function.feed_ingestor.function_name }
 
 data "archive_file" "media_bias" {
@@ -439,4 +441,38 @@ resource "aws_lambda_function" "media_bias" {
   }
   tracing_config { mode = "Active" }
   depends_on = [aws_cloudwatch_log_group.lambdas]
+}
+
+# ── Security scoring Lambda ───────────────────────────────────────────────────
+
+data "archive_file" "security_score" {
+  type        = "zip"
+  output_path = "${path.root}/.terraform/lambda_zips/security-score.zip"
+  source_dir  = "${path.root}/lambdas/security-score"
+}
+
+resource "aws_cloudwatch_log_group" "security_score" {
+  name              = "/aws/lambda/${var.name_prefix}-security-score"
+  retention_in_days = 14
+}
+
+resource "aws_lambda_function" "security_score" {
+  function_name    = "${var.name_prefix}-security-score"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "nodejs22.x"
+  architectures    = ["arm64"]
+  timeout          = 10
+  memory_size      = 256
+  filename         = data.archive_file.security_score.output_path
+  source_code_hash = data.archive_file.security_score.output_base64sha256
+  environment {
+    variables = {
+      AWS_BEDROCK_REGION   = local.common_env.AWS_BEDROCK_REGION
+      AWS_BEDROCK_MODEL_ID = local.common_env.AWS_BEDROCK_MODEL_ID
+      NODE_ENV             = "production"
+    }
+  }
+  tracing_config { mode = "Active" }
+  depends_on = [aws_cloudwatch_log_group.security_score]
 }
