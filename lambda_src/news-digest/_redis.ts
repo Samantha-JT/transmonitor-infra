@@ -1,8 +1,12 @@
-import { createCluster } from 'redis';
-let client: ReturnType<typeof createCluster> | null = null;
+import { createClient } from 'redis';
+var client: any = null;
 async function getClient() {
   if (client && client.isOpen) return client;
-  client = createCluster({ rootNodes: [{ url: process.env.REDIS_URL! }], defaults: { socket: { tls: true } } });
+  client = createClient({
+    url: process.env.REDIS_URL,
+    socket: { tls: true }
+  });
+  client.on('error', (err: any) => console.error('Redis error:', err));
   await client.connect();
   return client;
 }

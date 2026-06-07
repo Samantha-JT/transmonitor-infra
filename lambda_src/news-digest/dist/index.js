@@ -29,7 +29,11 @@ var import_redis = require("redis");
 var client = null;
 async function getClient() {
   if (client && client.isOpen) return client;
-  client = (0, import_redis.createCluster)({ rootNodes: [{ url: process.env.REDIS_URL }], defaults: { socket: { tls: true } } });
+  client = (0, import_redis.createClient)({
+    url: process.env.REDIS_URL,
+    socket: { tls: true }
+  });
+  client.on("error", (err) => console.error("Redis error:", err));
   await client.connect();
   return client;
 }
@@ -598,31 +602,41 @@ function isTransRelevant(item) {
 }
 
 // news-digest/_trans-ai-filter.ts
-var SYSTEM_PROMPT = `You are a news relevance classifier for a transgender news dashboard. Given a list of headlines, determine which are relevant to trans/nonbinary people, trans rights, or gender identity. Respond with ONLY a JSON array of booleans.`;
+var import_client_bedrock_runtime = require("@aws-sdk/client-bedrock-runtime");
+var SYSTEM_PROMPT = `You are a relevance classifier for a transgender news dashboard. Given a JSON array of headlines, return a JSON array of booleans \u2014 true if the article's PRIMARY subject is transgender/nonbinary people, trans rights, gender identity policy, or trans healthcare. Return false if trans identity is merely mentioned incidentally (e.g. a trans athlete in a general sports story, or a trans person in a general crime story where their identity is not the focus). Respond ONLY with a JSON array of booleans, no other text.`;
 async function aiFilterTransRelevant(items) {
   if (items.length === 0) return [];
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!groqKey) return items.map(() => true);
+  const modelId = process.env.AWS_BEDROCK_MODEL_ID ?? "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
+  const region = process.env.AWS_BEDROCK_REGION ?? "eu-west-1";
   try {
+    const bedrock = new import_client_bedrock_runtime.BedrockRuntimeClient({ region });
     const titles = items.map((i) => i.title ?? "");
-    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "llama-3.1-8b-instant", temperature: 0, max_tokens: 256, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: JSON.stringify(titles) }] }),
-      signal: AbortSignal.timeout(8e3)
-    });
-    if (!resp.ok) return items.map(() => true);
-    const data = await resp.json();
-    const content = data.choices?.[0]?.message?.content?.trim().replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim() ?? "";
-    const parsed = JSON.parse(content);
+    const result = await Promise.race([
+      bedrock.send(new import_client_bedrock_runtime.InvokeModelCommand({
+        modelId,
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+          anthropic_version: "bedrock-2023-05-31",
+          max_tokens: 256,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: JSON.stringify(titles) }]
+        })
+      })),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("bedrock_timeout")), 8e3))
+    ]);
+    const raw = JSON.parse(new TextDecoder().decode(result.body));
+    const text = (raw.content?.[0]?.text ?? "").trim().replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+    const parsed = JSON.parse(text);
     if (Array.isArray(parsed)) return parsed.map(Boolean);
-  } catch {
+  } catch (err) {
+    console.warn("[ai-filter] bedrock failed, dropping keyword-failed items:", err.message);
   }
-  return items.map(() => true);
+  return items.map(() => false);
 }
 
 // news-digest/index.ts
-var import_client_bedrock_runtime = require("@aws-sdk/client-bedrock-runtime");
+var import_client_bedrock_runtime2 = require("@aws-sdk/client-bedrock-runtime");
 var import_redis3 = require("redis");
 var markNoCacheResponse = (_req) => {
 };
@@ -657,6 +671,14 @@ var SCORE_WEIGHTS = {
   corroboration: 0.15,
   recency: 0.1
 };
+function extractStoryKey(title) {
+  const STOP = /* @__PURE__ */ new Set(["a", "an", "the", "in", "on", "at", "to", "for", "of", "and", "or", "but", "is", "are", "was", "were", "has", "have", "had", "its", "with", "as", "by", "from", "that", "this", "it", "be", "will", "can", "not", "no", "up", "out", "over", "who", "what", "how", "when", "why", "says", "said", "after", "before", "amid", "also", "just", "now", "new", "two", "one", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]);
+  const lower = title.toLowerCase().replace(/\s+[-\u2013\u2014]\s+[\w\s.]+$/, "").replace(/^(breaking|update|exclusive|watch|read|opinion|analysis):\s*/i, "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim();
+  const words = new Set(
+    lower.split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w))
+  );
+  return [...words].sort().slice(0, 8).join(" ");
+}
 function computeImportanceScore(level, source, corroborationCount, publishedAt) {
   const tier = getSourceTier(source);
   const tierScore = tier === 1 ? 100 : tier === 2 ? 75 : tier === 3 ? 50 : 25;
@@ -1017,12 +1039,75 @@ async function buildDigest(variant, lang) {
         item.publishedAt
       );
     }
+    const JACCARD_THRESHOLD = 0.18;
+    const titleWords = /* @__PURE__ */ new Map();
+    for (const item of allItems) {
+      titleWords.set(item, extractStoryKey(item.title) ? new Set(extractStoryKey(item.title).split(" ")) : /* @__PURE__ */ new Set());
+    }
+    const parent = /* @__PURE__ */ new Map();
+    const getRoot = (x) => {
+      if (parent.get(x) === x) return x;
+      const root = getRoot(parent.get(x));
+      parent.set(x, root);
+      return root;
+    };
+    for (const item of allItems) parent.set(item, item);
+    const itemList = allItems;
+    for (let i = 0; i < itemList.length; i++) {
+      for (let j = i + 1; j < itemList.length; j++) {
+        const a = titleWords.get(itemList[i]);
+        const b = titleWords.get(itemList[j]);
+        if (a.size === 0 || b.size === 0) continue;
+        let intersection = 0;
+        for (const w of a) {
+          if (b.has(w)) intersection++;
+        }
+        const union = a.size + b.size - intersection;
+        if (intersection / union >= JACCARD_THRESHOLD) {
+          const ra = getRoot(itemList[i]);
+          const rb = getRoot(itemList[j]);
+          if (ra !== rb) parent.set(ra, rb);
+        }
+      }
+    }
+    const clusterWinner = /* @__PURE__ */ new Map();
+    for (const item of allItems) {
+      const root = getRoot(item);
+      const current = clusterWinner.get(root);
+      if (!current || item.importanceScore > current.importanceScore) {
+        clusterWinner.set(root, item);
+      }
+    }
+    const clusterSources = /* @__PURE__ */ new Map();
+    for (const item of allItems) {
+      const root = getRoot(item);
+      const sources = clusterSources.get(root) ?? /* @__PURE__ */ new Set();
+      sources.add(item.source);
+      clusterSources.set(root, sources);
+    }
+    for (const item of allItems) {
+      const root = getRoot(item);
+      const mergedCount = clusterSources.get(root)?.size ?? item.corroborationCount;
+      if (mergedCount > item.corroborationCount) {
+        item.corroborationCount = mergedCount;
+        item.importanceScore = computeImportanceScore(
+          item.level,
+          item.source,
+          mergedCount,
+          item.publishedAt
+        );
+      }
+    }
+    const winningHashes = new Set(
+      [...clusterWinner.values()].map((i) => i.titleHash)
+    );
     const slicedByCategory = /* @__PURE__ */ new Map();
     for (const [category, items] of results) {
       items.sort(
         (a, b) => b.importanceScore - a.importanceScore || b.publishedAt - a.publishedAt
       );
-      slicedByCategory.set(category, items.slice(0, MAX_ITEMS_PER_CATEGORY));
+      const dedupedItems = items.filter((item) => winningHashes.has(item.titleHash));
+      slicedByCategory.set(category, dedupedItems.slice(0, MAX_ITEMS_PER_CATEGORY));
     }
     const globalBestCategory = /* @__PURE__ */ new Map();
     for (const [category, items] of slicedByCategory) {
@@ -1255,25 +1340,16 @@ var BIAS_SOURCE_NAME_MAP = {
   "Pink News": "pinknews.co.uk",
   "PinkNews": "pinknews.co.uk",
   "The Mirror": "mirror.co.uk",
+  "Daily Mirror": "mirror.co.uk",
   "Metro": "metro.co.uk",
+  "Metro Trans": "metro.co.uk",
   "The Spectator": "spectator.co.uk",
   "ITV News": "itv.com",
-  "The Times": "thetimes.co.uk",
-  "Daily Mail": "dailymail.co.uk",
-  "The Telegraph": "telegraph.co.uk",
-  "The Sun": "thesun.co.uk",
-  "GB News": "gbnews.com",
-  "Daily Mirror": "mirror.co.uk",
-  "The Spectator": "spectator.co.uk",
-  "Metro": "metro.co.uk",
-  "Sky News": "sky.com",
-  "Channel 4 News": "channel4.com",
   "The Times Trans": "thetimes.co.uk",
   "The Telegraph Trans": "telegraph.co.uk",
   "Daily Express": "express.co.uk",
   "The i": "inews.co.uk",
   "HuffPost UK": "huffingtonpost.co.uk",
-  "Metro Trans": "metro.co.uk",
   "TalkTV": "talk.tv",
   "TransVitae": "transvitae.com",
   "Transgender Feed": "transgenderfeed.com",
@@ -1326,7 +1402,8 @@ async function scoreAndIngestBias(item) {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) return;
   try {
-    const bedrock = new import_client_bedrock_runtime.BedrockRuntimeClient({ region: "eu-west-1" });
+    const bedrock = new import_client_bedrock_runtime2.BedrockRuntimeClient({ region: "eu-west-1" });
+    const editorialStance = BIAS_EDITORIAL[domain] ?? "neutral";
     const prompt = `You are a media bias analyst specialising in UK trans rights coverage.
 
 STEP 1 \u2014 Relevance:
@@ -1339,6 +1416,11 @@ Mark relevant=false ONLY if there is no trans/gender content at all (general ent
 When in doubt, mark relevant=true.
 
 STEP 2 \u2014 Bias scoring (only if relevant=true):
+Score how THIS OUTLET frames the subject \u2014 not the subject matter itself.
+This article is from a source with an editorial stance of "${editorialStance}" toward trans issues.
+A supportive outlet reporting on hostile news should still score highly if their framing is fair, accurate, and does not amplify the hostile position uncritically.
+A hostile outlet publishing a positive story should score lower if the broader framing remains dismissive.
+
 0-20  = hostile    (misgendering, deadnaming, "groomer" framing, biological essentialism used to deny rights)
 21-40 = negative   (sceptical framing, "debate" language, gender-critical voices given primary platform)
 41-60 = neutral    (factual reporting, balanced, no strong framing)
@@ -1350,7 +1432,7 @@ Title: ${item.title}
 Respond ONLY with valid JSON, no markdown:
 {"relevant": true|false, "score": <integer 0-100 if relevant else null>, "reason": "<one sentence max 20 words>"}`;
     const bedrockResult = await Promise.race([
-      bedrock.send(new import_client_bedrock_runtime.InvokeModelCommand({
+      bedrock.send(new import_client_bedrock_runtime2.InvokeModelCommand({
         modelId: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         contentType: "application/json",
         accept: "application/json",
