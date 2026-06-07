@@ -65,12 +65,11 @@ var handler = async (event) => {
     console.warn("Redis unavailable:", e.message);
   }
   const secrets = await getSecrets();
-  const apiKey = secrets.groq_api_key || secrets.openrouter_api_key;
+  const apiKey = secrets.openrouter_api_key;
   if (!apiKey) {
     return { statusCode: 503, body: JSON.stringify({ error: "No AI provider configured" }) };
   }
-  const isGroq = !!secrets.groq_api_key;
-  const endpoint = isGroq ? "https://api.groq.com/openai/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+  const endpoint = "https://openrouter.ai/api/v1/chat/completions";
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -78,7 +77,7 @@ var handler = async (event) => {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: isGroq ? "llama-3.1-8b-instant" : "mistralai/mistral-7b-instruct",
+      model: "mistralai/mistral-7b-instruct",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 512
     })

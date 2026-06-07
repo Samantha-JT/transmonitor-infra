@@ -69,6 +69,23 @@ interface ParsedItem {
   lang: string;
 }
 
+function extractStoryKey(title: string): string {
+  const STOP = new Set(['a','an','the','in','on','at','to','for','of','and','or','but','is','are','was','were','has','have','had','its','with','as','by','from','that','this','it','be','will','can','not','no','up','out','over','who','what','how','when','why','says','said','after','before','amid','also','just','now','new','two','one','three','four','five','six','seven','eight','nine','ten']);
+  const lower = title
+    .toLowerCase()
+    .replace(/\s+[-\u2013\u2014]\s+[\w\s.]+$/, '')  // strip attribution suffix
+    .replace(/^(breaking|update|exclusive|watch|read|opinion|analysis):\s*/i, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .trim();
+  const words = new Set(
+    lower.split(/\s+/).filter(w => w.length > 2 && !STOP.has(w))
+  );
+  // Return sorted significant words — order-independent so different phrasings
+  // of the same story share the same key if they share enough vocabulary.
+  // Take up to 8 words sorted alphabetically so the key is deterministic.
+  return [...words].sort().slice(0, 8).join(' ');
+}
+
 function computeImportanceScore(
   level: ThreatLevel,
   source: string,
@@ -559,13 +576,86 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
       );
     }
 
+    // Secondary clustering: Jaccard similarity to catch same-story articles
+    // with different phrasings (e.g. 7 outlets covering the same court ruling).
+    // Two items are the same story if they share >= JACCARD_THRESHOLD of their
+    // significant words. Keeps highest-scoring item per cluster.
+    const JACCARD_THRESHOLD = 0.18;
+    const titleWords = new Map<ParsedItem, Set<string>>();
+    for (const item of allItems) {
+      titleWords.set(item, extractStoryKey(item.title) ? new Set(extractStoryKey(item.title).split(' ')) : new Set());
+    }
+
+    // Union-Find for clustering
+    const parent = new Map<ParsedItem, ParsedItem>();
+    const getRoot = (x: ParsedItem): ParsedItem => {
+      if (parent.get(x) === x) return x;
+      const root = getRoot(parent.get(x)!);
+      parent.set(x, root);
+      return root;
+    };
+    for (const item of allItems) parent.set(item, item);
+
+    const itemList = allItems;
+    for (let i = 0; i < itemList.length; i++) {
+      for (let j = i + 1; j < itemList.length; j++) {
+        const a = titleWords.get(itemList[i]!)!;
+        const b = titleWords.get(itemList[j]!)!;
+        if (a.size === 0 || b.size === 0) continue;
+        let intersection = 0;
+        for (const w of a) { if (b.has(w)) intersection++; }
+        const union = a.size + b.size - intersection;
+        if (intersection / union >= JACCARD_THRESHOLD) {
+          const ra = getRoot(itemList[i]!);
+          const rb = getRoot(itemList[j]!);
+          if (ra !== rb) parent.set(ra, rb);
+        }
+      }
+    }
+
+    // Build clusters and pick winner (highest importanceScore) per cluster
+    const clusterWinner = new Map<ParsedItem, ParsedItem>();
+    for (const item of allItems) {
+      const root = getRoot(item);
+      const current = clusterWinner.get(root);
+      if (!current || item.importanceScore > current.importanceScore) {
+        clusterWinner.set(root, item);
+      }
+    }
+
+    // Pool corroboration across clusters
+    const clusterSources = new Map<ParsedItem, Set<string>>();
+    for (const item of allItems) {
+      const root = getRoot(item);
+      const sources = clusterSources.get(root) ?? new Set<string>();
+      sources.add(item.source);
+      clusterSources.set(root, sources);
+    }
+    for (const item of allItems) {
+      const root = getRoot(item);
+      const mergedCount = clusterSources.get(root)?.size ?? item.corroborationCount;
+      if (mergedCount > item.corroborationCount) {
+        item.corroborationCount = mergedCount;
+        item.importanceScore = computeImportanceScore(
+          item.level, item.source, mergedCount, item.publishedAt,
+        );
+      }
+    }
+
+    // Winning hashes — one per cluster
+    const winningHashes = new Set(
+      [...clusterWinner.values()].map(i => i.titleHash!)
+    );
+
     // Sort by importanceScore desc, then pubDate desc; then truncate per category.
     const slicedByCategory = new Map<string, ParsedItem[]>();
     for (const [category, items] of results) {
       items.sort((a, b) =>
         b.importanceScore - a.importanceScore || b.publishedAt - a.publishedAt,
       );
-      slicedByCategory.set(category, items.slice(0, MAX_ITEMS_PER_CATEGORY));
+      // Filter to only winning items (highest-scoring per story key cluster)
+      const dedupedItems = items.filter(item => winningHashes.has(item.titleHash!));
+      slicedByCategory.set(category, dedupedItems.slice(0, MAX_ITEMS_PER_CATEGORY));
     }
 
     // Cross-category deduplication: if the same story (by titleHash) appears
@@ -767,26 +857,15 @@ const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
   'The Sun': 'thesun.co.uk',
   'GB News': 'gbnews.com',
   'Pink News': 'pinknews.co.uk', 'PinkNews': 'pinknews.co.uk',
-  'The Mirror': 'mirror.co.uk',
-  'Metro': 'metro.co.uk',
+  'The Mirror': 'mirror.co.uk', 'Daily Mirror': 'mirror.co.uk',
+  'Metro': 'metro.co.uk', 'Metro Trans': 'metro.co.uk',
   'The Spectator': 'spectator.co.uk',
   'ITV News': 'itv.com',
-  'The Times': 'thetimes.co.uk',
-  'Daily Mail': 'dailymail.co.uk',
-  'The Telegraph': 'telegraph.co.uk',
-  'The Sun': 'thesun.co.uk',
-  'GB News': 'gbnews.com',
-  'Daily Mirror': 'mirror.co.uk',
-  'The Spectator': 'spectator.co.uk',
-  'Metro': 'metro.co.uk',
-  'Sky News': 'sky.com',
-  'Channel 4 News': 'channel4.com',
   'The Times Trans': 'thetimes.co.uk',
   'The Telegraph Trans': 'telegraph.co.uk',
   'Daily Express': 'express.co.uk',
   'The i': 'inews.co.uk',
   'HuffPost UK': 'huffingtonpost.co.uk',
-  'Metro Trans': 'metro.co.uk',
   'TalkTV': 'talk.tv',
   'TransVitae': 'transvitae.com',
   'Transgender Feed': 'transgenderfeed.com',
@@ -848,6 +927,7 @@ async function scoreAndIngestBias(item: { link: string; title: string; source: s
   try {
     // Score via Bedrock
     const bedrock = new BedrockRuntimeClient({ region: 'eu-west-1' });
+    const editorialStance = BIAS_EDITORIAL[domain] ?? 'neutral';
     const prompt = `You are a media bias analyst specialising in UK trans rights coverage.
 
 STEP 1 — Relevance:
@@ -860,6 +940,11 @@ Mark relevant=false ONLY if there is no trans/gender content at all (general ent
 When in doubt, mark relevant=true.
 
 STEP 2 — Bias scoring (only if relevant=true):
+Score how THIS OUTLET frames the subject — not the subject matter itself.
+This article is from a source with an editorial stance of "${editorialStance}" toward trans issues.
+A supportive outlet reporting on hostile news should still score highly if their framing is fair, accurate, and does not amplify the hostile position uncritically.
+A hostile outlet publishing a positive story should score lower if the broader framing remains dismissive.
+
 0-20  = hostile    (misgendering, deadnaming, "groomer" framing, biological essentialism used to deny rights)
 21-40 = negative   (sceptical framing, "debate" language, gender-critical voices given primary platform)
 41-60 = neutral    (factual reporting, balanced, no strong framing)

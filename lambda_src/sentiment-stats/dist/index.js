@@ -28,7 +28,7 @@ var CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods":
 var _client = null;
 async function getRedis() {
   if (_client && _client.isOpen) return _client;
-  _client = (0, import_redis.createCluster)({ rootNodes: [{ url: process.env.REDIS_URL }], defaults: { socket: { tls: true } } });
+  _client = (0, import_redis.createClient)({ url: process.env.REDIS_URL, socket: { tls: true } });
   await _client.connect();
   return _client;
 }

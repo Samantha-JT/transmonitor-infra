@@ -1,11 +1,11 @@
-import { createCluster } from 'redis';
+import { createClient } from "redis";;
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
 
-let _client: ReturnType<typeof createCluster> | null = null;
+let _client: ReturnType<typeof createClient> | null = null;
 async function getRedis() {
   if (_client && _client.isOpen) return _client;
-  _client = createCluster({ rootNodes: [{ url: process.env.REDIS_URL! }], defaults: { socket: { tls: true } } });
+  _client = createClient({ url: process.env.REDIS_URL!, socket: { tls: true } });
   await _client.connect();
   return _client;
 }

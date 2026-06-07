@@ -2126,9 +2126,9 @@ var s3 = new import_client_s3.S3Client({ region: process.env.AWS_REGION });
 var redisClient = null;
 async function getRedis() {
   if (redisClient && redisClient.isOpen) return redisClient;
-  redisClient = (0, import_redis.createCluster)({
-    rootNodes: [{ url: process.env.REDIS_URL }],
-    defaults: { socket: { tls: true } }
+  redisClient = (0, import_redis.createClient)({
+    url: process.env.REDIS_URL,
+    socket: { tls: true }
   });
   await redisClient.connect();
   return redisClient;

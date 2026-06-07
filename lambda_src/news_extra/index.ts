@@ -1,10 +1,10 @@
-import { createCluster } from 'redis';
+import { createClient } from "redis";;
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
-let client: ReturnType<typeof createCluster> | null = null;
+let client: ReturnType<typeof createClient> | null = null;
 async function getClient() {
   if (client && client.isOpen) return client;
-  client = createCluster({ rootNodes: [{ url: process.env.REDIS_URL! }], defaults: { socket: { tls: true } } });
+  client = createClient({ url: process.env.REDIS_URL!, socket: { tls: true } });
   await client.connect();
   return client;
 }

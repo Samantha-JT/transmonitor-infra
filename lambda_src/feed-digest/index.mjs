@@ -1,4 +1,4 @@
-import { createCluster } from "redis";
+import { createClient } from "redis";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
@@ -6,9 +6,9 @@ let redisClient = null;
 
 async function getRedis() {
   if (redisClient && redisClient.isOpen) return redisClient;
-  redisClient = createCluster({
-    rootNodes: [{ url: process.env.REDIS_URL }],
-    defaults: { socket: { tls: true } },
+  redisClient = createClient({
+    url: process.env.REDIS_URL,
+    socket: { tls: true },
   });
   await redisClient.connect();
   return redisClient;
