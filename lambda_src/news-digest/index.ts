@@ -1,5 +1,6 @@
 
 import { cachedFetchJson, getCachedJsonBatch, runRedisPipeline } from './_redis';
+import { pushover } from './pushover';
 const markNoCacheResponse = (_req: unknown) => {};
 import { sha256Hex } from './_hash';
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -792,6 +793,13 @@ export const handler = async (event: { queryStringParameters?: Record<string, st
     };
   } catch (err) {
     console.error('[news-digest] error:', err);
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user:  process.env.PUSHOVER_USER,
+      title: '🚨 TransMonitor: News Digest Error',
+      message: `news-digest handler failed: ${(err as Error).message ?? err}`,
+      priority: 1,
+    });
     const fallback = fallbackCache2.get(`${variant}:${lang}`)?.data ?? { categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() };
     return { statusCode: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(fallback) };
   }

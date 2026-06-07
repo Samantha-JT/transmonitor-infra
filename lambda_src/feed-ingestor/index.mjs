@@ -1,4 +1,5 @@
-import { createClient } from "redis";;
+import { createClient } from "redis";
+import { pushover } from "./pushover.mjs";;
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { XMLParser } from "fast-xml-parser";
 
@@ -200,6 +201,31 @@ export const handler = async () => {
     console.log("feed-ingestor: Redis warmed");
   } catch (e) {
     console.warn("feed-ingestor: Redis failed (non-fatal):", e.message);
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user:  process.env.PUSHOVER_USER,
+      title: "⚠️ TransMonitor: Redis Warning",
+      message: `Feed ingestor Redis cache failed: ${e.message}`,
+      priority: 0,
+    });
+  }
+
+  if (deduped.length === 0) {
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user:  process.env.PUSHOVER_USER,
+      title: "🚨 TransMonitor: Zero Items Ingested",
+      message: `Feed ingestor returned 0 items for variant <b>${variant}</b>. Check feed sources.`,
+      priority: 1,
+    });
+  } else if (deduped.length < 10) {
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user:  process.env.PUSHOVER_USER,
+      title: "⚠️ TransMonitor: Low Item Count",
+      message: `Feed ingestor only got <b>${deduped.length} items</b> for variant ${variant}. Feeds may be degraded.`,
+      priority: 0,
+    });
   }
 
   return { statusCode: 200, body: `ok - ${deduped.length} items` };

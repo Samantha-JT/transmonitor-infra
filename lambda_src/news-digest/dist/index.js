@@ -83,6 +83,22 @@ async function runRedisPipeline(commands, _readonly = false) {
   }
 }
 
+// news-digest/pushover.ts
+var PUSHOVER_API = "https://api.pushover.net/1/messages.json";
+async function pushover({ token, user, title, message, priority = 0 }) {
+  if (!token || !user) return;
+  try {
+    const res = await fetch(PUSHOVER_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, user, title, message, priority, html: 1 })
+    });
+    if (!res.ok) console.error("Pushover error:", await res.text());
+  } catch (err) {
+    console.error("Pushover fetch failed:", err);
+  }
+}
+
 // news-digest/_hash.ts
 var import_crypto = require("crypto");
 async function sha256Hex(input) {
@@ -1215,6 +1231,13 @@ var handler = async (event) => {
     };
   } catch (err) {
     console.error("[news-digest] error:", err);
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user: process.env.PUSHOVER_USER,
+      title: "\u{1F6A8} TransMonitor: News Digest Error",
+      message: `news-digest handler failed: ${err.message ?? err}`,
+      priority: 1
+    });
     const fallback = fallbackCache2.get(`${variant}:${lang}`)?.data ?? { categories: {}, feedStatuses: {}, generatedAt: (/* @__PURE__ */ new Date()).toISOString() };
     return { statusCode: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(fallback) };
   }

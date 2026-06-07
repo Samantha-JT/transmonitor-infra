@@ -2120,6 +2120,24 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 var import_redis = require("redis");
+
+// feed-ingestor/pushover.mjs
+var PUSHOVER_API = "https://api.pushover.net/1/messages.json";
+async function pushover({ token, user, title, message, priority = 0 }) {
+  if (!token || !user) return;
+  try {
+    const res = await fetch(PUSHOVER_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, user, title, message, priority, html: 1 })
+    });
+    if (!res.ok) console.error("Pushover error:", await res.text());
+  } catch (err) {
+    console.error("Pushover fetch failed:", err);
+  }
+}
+
+// feed-ingestor/index.mjs
 var import_client_s3 = require("@aws-sdk/client-s3");
 var import_fast_xml_parser = __toESM(require_fxp(), 1);
 var s3 = new import_client_s3.S3Client({ region: process.env.AWS_REGION });
@@ -2300,6 +2318,30 @@ var handler = async () => {
     console.log("feed-ingestor: Redis warmed");
   } catch (e) {
     console.warn("feed-ingestor: Redis failed (non-fatal):", e.message);
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user: process.env.PUSHOVER_USER,
+      title: "\u26A0\uFE0F TransMonitor: Redis Warning",
+      message: `Feed ingestor Redis cache failed: ${e.message}`,
+      priority: 0
+    });
+  }
+  if (deduped.length === 0) {
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user: process.env.PUSHOVER_USER,
+      title: "\u{1F6A8} TransMonitor: Zero Items Ingested",
+      message: `Feed ingestor returned 0 items for variant <b>${variant}</b>. Check feed sources.`,
+      priority: 1
+    });
+  } else if (deduped.length < 10) {
+    await pushover({
+      token: process.env.PUSHOVER_TOKEN,
+      user: process.env.PUSHOVER_USER,
+      title: "\u26A0\uFE0F TransMonitor: Low Item Count",
+      message: `Feed ingestor only got <b>${deduped.length} items</b> for variant ${variant}. Feeds may be degraded.`,
+      priority: 0
+    });
   }
   return { statusCode: 200, body: `ok - ${deduped.length} items` };
 };

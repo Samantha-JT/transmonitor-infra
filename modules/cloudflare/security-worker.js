@@ -314,46 +314,33 @@ async function addCloudflareFirewallRule(ip, reason, env) {
 // ── Slack alert ───────────────────────────────────────────────────────────────
 
 async function slackAlert({ action, ip, country, asn, asnOrg, score, reasons, rateCount, source }, env) {
-  if (!env.SLACK_WEBHOOK_URL) return;
-  const emoji  = action === "block" ? "🚫" : "⚠️";
-  const colour = action === "block" ? "#cc0000" : "#ff9900";
-  const payload = {
-    attachments: [{
-      color: colour,
-      blocks: [
-        {
-          type: "header",
-          text: { type: "plain_text", text: `${emoji} TransMonitor Security: ${action.toUpperCase()}` },
-        },
-        {
-          type: "section",
-          fields: [
-            { type: "mrkdwn", text: `*IP:*\n\`${ip}\`` },
-            { type: "mrkdwn", text: `*Country:*\n${country}` },
-            { type: "mrkdwn", text: `*ASN:*\n${asn} — ${asnOrg || "unknown"}` },
-            { type: "mrkdwn", text: `*Risk Score:*\n${score}/100` },
-            { type: "mrkdwn", text: `*Req/5min:*\n${rateCount}` },
-            { type: "mrkdwn", text: `*Source:*\n${source}` },
-          ],
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*Reasons:*\n${(Array.isArray(reasons) ? reasons : [reasons]).join("\n") || "rate limit exceeded"}`,
-          },
-        },
-      ],
-    }],
-  };
+  if (!env.PUSHOVER_TOKEN || !env.PUSHOVER_USER) return;
+  const emoji   = action === "block" ? "🚫" : "⚠️";
+  const priority = action === "block" ? 1 : 0;
+  const title   = `${emoji} TransMonitor: ${action.toUpperCase()}`;
+  const message = [
+    `<b>IP:</b> ${ip} (${country})`,
+    `<b>ASN:</b> ${asn} — ${asnOrg || "unknown"}`,
+    `<b>Score:</b> ${score}/100`,
+    `<b>Req/5min:</b> ${rateCount}`,
+    `<b>Source:</b> ${source}`,
+    `<b>Reasons:</b> ${(Array.isArray(reasons) ? reasons : [reasons]).join(", ") || "rate limit exceeded"}`,
+  ].join("\n");
   try {
-    await fetch(env.SLACK_WEBHOOK_URL, {
+    await fetch("https://api.pushover.net/1/messages.json", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(payload),
+      body: JSON.stringify({
+        token:    env.PUSHOVER_TOKEN,
+        user:     env.PUSHOVER_USER,
+        title,
+        message,
+        priority,
+        html:     1,
+      }),
     });
   } catch (err) {
-    console.error("Slack alert failed:", err);
+    console.error("Pushover alert failed:", err);
   }
 }
 
