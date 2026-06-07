@@ -2156,8 +2156,8 @@ var gnGB = (q) => `https://news.google.com/rss/search?q=${encodeURIComponent(q)}
 var FEEDS = {
   legal: [
     { name: "Erin in the Morning", url: "https://www.erininthemorning.com/feed" },
-    { name: "Trans Legislation Tracker", url: "https://translegislation.com/rss.xml" },
-    { name: "ACLU LGBT News", url: "https://www.aclu.org/news/lgbtq-rights/feed" },
+    // DISABLED 2026-06-07: persistent 404/403 in Lambda logs: { name: "Trans Legislation Tracker", url: "https://translegislation.com/rss.xml" },
+    { name: "ACLU LGBT News", url: "https://www.aclu.org/news/by-issue/lgbtq-rights/feed" },
     { name: "US Trans Legislation", url: gn('("gender-affirming care ban" OR "trans bill" OR "bathroom bill","bathroom law" OR "drag ban") when:3d') },
     { name: "UK Trans Law", url: gnGB('("GRC" OR "Gender Recognition Act" OR "Cass Review" OR "Equality Act") UK when:3d') },
     { name: "EU Gender Recognition", url: gn('("gender self-determination" OR "Ley Trans" OR "Selbstbestimmungsgesetz") when:7d') }
@@ -2174,7 +2174,7 @@ var FEEDS = {
     { name: "Them", url: "https://www.them.us/feed/rss" },
     { name: "Xtra Magazine", url: "https://xtramagazine.com/feed" },
     { name: "Autostraddle", url: "https://www.autostraddle.com/feed/" },
-    { name: "The 19th", url: "https://19thnews.org/category/lgbtq/feed/" }
+    { name: "The 19th", url: "https://19thnews.org/feed/" }
   ],
   safety: [
     { name: "Trans Violence News", url: gn('("transgender" OR "trans woman" OR "trans man") ("hate crime" OR "attacked" OR "murdered" OR "killed") when:3d') },
@@ -2253,7 +2253,7 @@ function itemToNewsItem(item, sourceName, isAtom) {
 }
 async function fetchAndParseFeed(feed) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1e4);
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.FEED_TIMEOUT_MS ?? 5e3));
   try {
     const res = await fetch(feed.url, {
       signal: controller.signal,

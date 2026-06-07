@@ -7,9 +7,8 @@
  * Environment bindings (Terraform / wrangler.toml):
  *   SECURITY_KV       - Workers KV namespace (request tracking)
  *   API_PROXY         - Service binding to api-proxy worker
- *   CF_API_TOKEN      - Cloudflare API token (Zone:Firewall Services:Edit)
  *   CF_ZONE_ID        - Cloudflare zone ID
- *   SLACK_WEBHOOK_URL - Slack incoming webhook
+ *   PUSHOVER_TOKEN    - Pushover application token
  *   SCORE_ENDPOINT    - API GW URL e.g. https://8soi33z3h9.execute-api.eu-west-1.amazonaws.com/security/score
  *   ORIGIN_VERIFY_SECRET - Same secret used by all Lambda calls
  *   HOSTNAME          - trans-news.com
@@ -103,7 +102,7 @@ export default {
     if (cfThreat > THRESHOLDS.CF_THREAT_BLOCK) {
       ctx.waitUntil(Promise.all([
         env.SECURITY_KV.put(`ip:${ip}:blocked`, "1", { expirationTtl: 86400 }),
-        slackAlert({ action: "block", ip, country, asn, asnOrg, score: cfThreat, reasons: [`CF threat score: ${cfThreat}`], rateCount: 0, source: "cf-threat-score" }, env),
+        pushoverAlert({ action: "block", ip, country, asn, asnOrg, score: cfThreat, reasons: [`CF threat score: ${cfThreat}`], rateCount: 0, source: "cf-threat-score" }, env),
       ]));
       return blockResponse(`CF threat score: ${cfThreat}`);
     }
@@ -130,8 +129,7 @@ export default {
             if (result.score >= THRESHOLDS.SCORE_BLOCK) {
               return Promise.all([
                 env.SECURITY_KV.put(`ip:${ip}:blocked`, "1", { expirationTtl: 86400 }),
-                addCloudflareFirewallRule(ip, result.reasoning, env),
-                slackAlert({
+                pushoverAlert({
                   action: "block", ip, country, asn, asnOrg,
                   score: result.score,
                   reasons: [result.reasoning],
@@ -149,15 +147,14 @@ export default {
     if (action === "block") {
       ctx.waitUntil(Promise.all([
         env.SECURITY_KV.put(`ip:${ip}:blocked`, "1", { expirationTtl: 86400 }),
-        addCloudflareFirewallRule(ip, reasons.join(", "), env),
-        slackAlert({ action: "block", ip, country, asn, asnOrg, score, reasons, rateCount, source: "fast-path" }, env),
+        pushoverAlert({ action: "block", ip, country, asn, asnOrg, score, reasons, rateCount, source: "fast-path" }, env),
       ]));
       return blockResponse(reasons[0] ?? "Security policy");
     }
 
     if (action === "challenge") {
       ctx.waitUntil(
-        slackAlert({ action: "challenge", ip, country, asn, asnOrg, score, reasons, rateCount, source: "fast-path" }, env)
+        pushoverAlert({ action: "challenge", ip, country, asn, asnOrg, score, reasons, rateCount, source: "fast-path" }, env)
       );
       return new Response(JSON.stringify({ error: "Access denied" }), {
         status: 403,
@@ -285,35 +282,9 @@ async function bedrockScore({ ip, country, asn, asnOrg, ua, path, rateCount, cfT
   }
 }
 
-// ── Cloudflare API: add firewall rule ─────────────────────────────────────────
+// ── Pushover alert ───────────────────────────────────────────────────────────
 
-async function addCloudflareFirewallRule(ip, reason, env) {
-  if (!env.CF_API_TOKEN || !env.CF_ZONE_ID) return;
-  try {
-    const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${env.CF_ZONE_ID}/firewall/rules`,
-      {
-        method:  "POST",
-        headers: {
-          "Authorization": `Bearer ${env.CF_API_TOKEN}`,
-          "Content-Type":  "application/json",
-        },
-        body: JSON.stringify([{
-          filter:      { expression: `ip.src eq ${ip}` },
-          action:      "block",
-          description: `Auto-blocked by security worker: ${reason.slice(0, 90)}`,
-        }]),
-      }
-    );
-    if (!res.ok) console.error("CF firewall rule failed:", await res.text());
-  } catch (err) {
-    console.error("Failed to add CF firewall rule:", err);
-  }
-}
-
-// ── Slack alert ───────────────────────────────────────────────────────────────
-
-async function slackAlert({ action, ip, country, asn, asnOrg, score, reasons, rateCount, source }, env) {
+async function pushoverAlert({ action, ip, country, asn, asnOrg, score, reasons, rateCount, source }, env) {
   if (!env.PUSHOVER_TOKEN || !env.PUSHOVER_USER) return;
   const emoji   = action === "block" ? "🚫" : "⚠️";
   const priority = action === "block" ? 1 : 0;
