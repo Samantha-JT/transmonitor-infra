@@ -29,3 +29,12 @@ dist/
 *.tfvars
 transmonitor.tfvars.old
 terraform.tfvars
+
+# Local Wrangler state
+.wrangler/
+
+# Local backup files
+*.bak.*
+
+# Local debug/security scripts
+cf-security-check.sh
