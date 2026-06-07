@@ -45,6 +45,11 @@ locals {
     PUSHOVER_USER   = var.pushover_user
   })
 
+  news_digest_env = merge(local.common_env, {
+    PUSHOVER_TOKEN = var.pushover_token
+    PUSHOVER_USER  = var.pushover_user
+  })
+
   vpc_config = {
     subnet_ids         = var.private_subnet_ids
     security_group_ids = [var.lambda_sg_id]
@@ -284,7 +289,7 @@ resource "aws_lambda_function" "news_digest" {
   memory_size      = 512
   filename         = data.archive_file.news_digest.output_path
   source_code_hash = data.archive_file.news_digest.output_base64sha256
-  environment { variables = local.common_env }
+  environment { variables = local.news_digest_env }
   vpc_config {
     subnet_ids         = local.vpc_config.subnet_ids
     security_group_ids = local.vpc_config.security_group_ids
