@@ -149,7 +149,7 @@ async function fetchAndParseRss(
   variant: string,
   signal: AbortSignal,
 ): Promise<ParsedItem[]> {
-  const cacheKey = `rss:feed:v1:${variant}:${feed.url}`;
+  const cacheKey = `rss:feed:v2:${variant}:${feed.url}`;
 
   try {
     const cached = await cachedFetchJson<ParsedItem[]>(cacheKey, 3600, async () => {
@@ -400,7 +400,7 @@ export async function listFeedDigest(
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : 'full';
   const lang = req.lang || 'en';
 
-  const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
+  const digestCacheKey = `news:digest:v2:${variant}:${lang}`;
   const fallbackKey = `${variant}:${lang}`;
 
   const empty = (): ListFeedDigestResponse => ({ categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() });
