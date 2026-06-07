@@ -17,6 +17,7 @@ import {
   MEDICAL_TERMS,
   KEY_PEOPLE,
   DETRANS_TERMS,
+  HOSTILE_FRAMING,
 } from './_trans-keywords';
 
 const TRANS_RELEVANT_KEYWORDS = [
@@ -24,6 +25,7 @@ const TRANS_RELEVANT_KEYWORDS = [
   ...MEDICAL_TERMS,
   ...KEY_PEOPLE,
   ...DETRANS_TERMS,
+  ...HOSTILE_FRAMING,
   // Additional terms not in keyword groups — catch false negatives from
   // broad LGBTQ+ outlets that use these without 'transgender' explicitly.
   'gender-affirming',

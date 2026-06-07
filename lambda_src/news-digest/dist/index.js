@@ -175,23 +175,23 @@ var VARIANT_FEEDS = {
       { name: "BBC News", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:bbc.co.uk when:3d') },
       { name: "The Guardian", url: gnGB('(transgender OR "trans rights") site:theguardian.com when:3d') },
       { name: "The Independent", url: gnGB('(transgender OR "trans rights") site:independent.co.uk when:3d') },
-      { name: "Sky News", url: gnGB('(transgender OR "trans rights") site:news.sky.com when:30d') },
-      { name: "Channel 4 News", url: gnGB('(transgender OR "trans rights") site:channel4.com when:30d') },
-      { name: "The Times", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:thetimes.co.uk when:30d') },
-      { name: "Daily Mail", url: gnGB('(transgender OR "trans rights") site:dailymail.co.uk when:3d') },
+      { name: "Sky News", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:news.sky.com when:30d') },
+      { name: "Channel 4 News", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:channel4.com when:30d') },
+      { name: "The Times", url: gnGB('(transgender OR "trans rights" OR "Cass Review" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:thetimes.co.uk when:30d') },
+      { name: "Daily Mail", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:dailymail.co.uk when:3d') },
       { name: "The Telegraph", url: gnGB('(transgender OR "trans rights") site:telegraph.co.uk when:30d') },
-      { name: "The Sun", url: gnGB('(transgender OR "trans rights") site:thesun.co.uk when:3d') },
-      { name: "GB News", url: gnGB('(transgender OR "trans rights") site:gbnews.com when:3d') },
-      { name: "Daily Mirror", url: gnGB('(transgender OR "trans rights") site:mirror.co.uk when:3d') },
-      { name: "The Spectator", url: gnGB('(transgender OR "trans rights") site:spectator.co.uk when:30d') },
-      { name: "The Times Trans", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:thetimes.co.uk when:30d') },
+      { name: "The Sun", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:thesun.co.uk when:3d') },
+      { name: "GB News", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:gbnews.com when:3d') },
+      { name: "Daily Mirror", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:mirror.co.uk when:3d') },
+      { name: "The Spectator", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:spectator.co.uk when:30d') },
+      { name: "The Times Trans", url: gnGB('(transgender OR "trans rights" OR "Cass Review" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:thetimes.co.uk when:30d') },
       { name: "The Telegraph Trans", url: gnGB('(transgender OR "trans rights") site:telegraph.co.uk when:30d') },
-      { name: "Daily Express", url: gnGB('(transgender OR "trans rights") site:express.co.uk when:30d') },
-      { name: "The i", url: gnGB('(transgender OR "trans rights") site:inews.co.uk when:30d') },
-      { name: "HuffPost UK", url: gnGB('(transgender OR "trans rights") site:huffingtonpost.co.uk when:30d') },
+      { name: "Daily Express", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:express.co.uk when:30d') },
+      { name: "The i", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:inews.co.uk when:30d') },
+      { name: "HuffPost UK", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:huffingtonpost.co.uk when:30d') },
       { name: "Metro Trans", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:30d') },
-      { name: "TalkTV", url: gnGB('(transgender OR "trans rights") site:talk.tv when:30d') },
-      { name: "ITV News", url: gnGB('(transgender OR "trans rights") site:itv.com when:3d') },
+      { name: "TalkTV", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:talk.tv when:30d') },
+      { name: "ITV News", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:itv.com when:3d') },
       { name: "Metro", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:3d') }
     ],
     wins: [
@@ -530,6 +530,84 @@ var MEDICAL_TERMS = [
   "informed consent model",
   "trans healthcare"
 ];
+var HOSTILE_FRAMING = [
+  // Anti-trans rhetorical framing
+  "gender ideology",
+  "radical gender ideology",
+  "trans ideology",
+  "trans agenda",
+  "gender extremism",
+  "gender critical",
+  "gender-critical",
+  "trans debate",
+  "TERF",
+  // tracker term — surfaces both critique-of and use-of
+  // "Single-sex spaces" framing — almost always trans-targeting in current discourse
+  "single-sex spaces",
+  "single sex spaces",
+  "sex-segregated spaces",
+  "women-only spaces",
+  "women only spaces",
+  "female-only spaces",
+  // "Biological sex" framing — when used in policy/rights context, targets trans inclusion
+  "biological sex",
+  "biological male",
+  "biological males",
+  "biological female",
+  "biological females",
+  "biological woman",
+  "biological women",
+  "biological man",
+  "biological men",
+  "adult human female",
+  // explicit anti-trans slogan
+  "adult human male",
+  // "Sex-based" framing
+  "sex-based rights",
+  "sex based rights",
+  // Women's sport / changing rooms framing
+  "protecting women and girls",
+  "women and girls",
+  // when paired with sport/spaces context
+  "women's sport",
+  "women's sports",
+  "female athletes",
+  "girls' sport",
+  "girls' sports",
+  "changing rooms",
+  "female changing rooms",
+  "women-only changing",
+  // Prison / hospital / domestic violence shelter framing
+  "male-bodied",
+  "female-bodied",
+  "female prison",
+  "women's prison",
+  "female ward",
+  "women's ward",
+  "female refuge",
+  "women's refuge",
+  // Youth / education framing — hostile outlets target trans youth via these terms
+  "gender confused",
+  "gender confusion",
+  "social contagion",
+  "rapid onset gender dysphoria",
+  "ROGD",
+  "transing kids",
+  "transing children",
+  "trans kids",
+  // both supportive and hostile use this
+  "gender questioning",
+  "gender-questioning",
+  // Detransition framing (already in DETRANS_TERMS but worth including in hostile context)
+  "irreversible damage",
+  "mutilation",
+  // Toilet / bathroom framing
+  "female toilets",
+  "male toilets",
+  "women's toilets",
+  "men's toilets",
+  "mixed-sex toilets"
+];
 var KEY_PEOPLE = [
   "Erin Reed",
   "Dylan Mulvaney",
@@ -560,6 +638,7 @@ var TRANS_RELEVANT_KEYWORDS = [
   ...MEDICAL_TERMS,
   ...KEY_PEOPLE,
   ...DETRANS_TERMS,
+  ...HOSTILE_FRAMING,
   // Additional terms not in keyword groups — catch false negatives from
   // broad LGBTQ+ outlets that use these without 'transgender' explicitly.
   "gender-affirming",
@@ -619,7 +698,33 @@ function isTransRelevant(item) {
 
 // news-digest/_trans-ai-filter.ts
 var import_client_bedrock_runtime = require("@aws-sdk/client-bedrock-runtime");
-var SYSTEM_PROMPT = `You are a relevance classifier for a transgender news dashboard. Given a JSON array of headlines, return a JSON array of booleans \u2014 true if the article's PRIMARY subject is transgender/nonbinary people, trans rights, gender identity policy, or trans healthcare. Return false if trans identity is merely mentioned incidentally (e.g. a trans athlete in a general sports story, or a trans person in a general crime story where their identity is not the focus). Respond ONLY with a JSON array of booleans, no other text.`;
+var SYSTEM_PROMPT = `You are a relevance classifier for a transgender news dashboard that tracks BOTH supportive and hostile coverage of trans people.
+
+Given a JSON array of headlines, return a JSON array of booleans \u2014 true if the article relates to trans people, trans rights, gender identity policy, or trans healthcare.
+
+CRITICAL: Anti-trans content often does NOT use the word "trans" or "transgender" explicitly. Mark TRUE for headlines using hostile framing or dog-whistle terms that target trans people, including:
+
+- "single-sex spaces", "sex-segregated spaces", "women-only spaces"
+- "biological male/female", "biological woman/man", "adult human female/male"
+- "sex-based rights", "protecting women and girls" (in policy/sport/spaces context)
+- "gender ideology", "gender-critical", "TERF"
+- "women's sport", "female athletes" (when in fairness/inclusion debate context)
+- "women's prison", "female ward", "women's refuge" (in policy debate context)
+- "changing rooms", "toilets" (when discussing access/policy)
+- "gender questioning", "trans kids", "social contagion"
+- Coverage of figures like JK Rowling, Helen Joyce, Kathleen Stock, Maya Forstater on gender issues
+- EHRC guidance, Equality Act updates, Cass Review coverage
+- Court cases involving gender recognition, trans healthcare, or sex-based rights
+- "Conversion therapy" debates that involve gender identity
+
+Mark FALSE only for:
+- Stories where a trans person is incidentally mentioned but the story is about something else entirely (e.g. a trans person caught up in an unrelated traffic accident)
+- Pure women's rights stories with no trans-related framing or implications
+- Unrelated topics that happen to use words like "gender" in non-trans contexts (e.g. gender pay gap statistics with no trans angle)
+
+When in doubt, mark TRUE. False positives are recoverable; missing hostile coverage of trans people is the bigger failure.
+
+Respond ONLY with a JSON array of booleans, no other text.`;
 async function aiFilterTransRelevant(items) {
   if (items.length === 0) return [];
   const modelId = process.env.AWS_BEDROCK_MODEL_ID ?? "eu.anthropic.claude-haiku-4-5-20251001-v1:0";

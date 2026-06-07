@@ -1,6 +1,32 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
-const SYSTEM_PROMPT = `You are a relevance classifier for a transgender news dashboard. Given a JSON array of headlines, return a JSON array of booleans — true if the article's PRIMARY subject is transgender/nonbinary people, trans rights, gender identity policy, or trans healthcare. Return false if trans identity is merely mentioned incidentally (e.g. a trans athlete in a general sports story, or a trans person in a general crime story where their identity is not the focus). Respond ONLY with a JSON array of booleans, no other text.`;
+const SYSTEM_PROMPT = `You are a relevance classifier for a transgender news dashboard that tracks BOTH supportive and hostile coverage of trans people.
+
+Given a JSON array of headlines, return a JSON array of booleans — true if the article relates to trans people, trans rights, gender identity policy, or trans healthcare.
+
+CRITICAL: Anti-trans content often does NOT use the word "trans" or "transgender" explicitly. Mark TRUE for headlines using hostile framing or dog-whistle terms that target trans people, including:
+
+- "single-sex spaces", "sex-segregated spaces", "women-only spaces"
+- "biological male/female", "biological woman/man", "adult human female/male"
+- "sex-based rights", "protecting women and girls" (in policy/sport/spaces context)
+- "gender ideology", "gender-critical", "TERF"
+- "women's sport", "female athletes" (when in fairness/inclusion debate context)
+- "women's prison", "female ward", "women's refuge" (in policy debate context)
+- "changing rooms", "toilets" (when discussing access/policy)
+- "gender questioning", "trans kids", "social contagion"
+- Coverage of figures like JK Rowling, Helen Joyce, Kathleen Stock, Maya Forstater on gender issues
+- EHRC guidance, Equality Act updates, Cass Review coverage
+- Court cases involving gender recognition, trans healthcare, or sex-based rights
+- "Conversion therapy" debates that involve gender identity
+
+Mark FALSE only for:
+- Stories where a trans person is incidentally mentioned but the story is about something else entirely (e.g. a trans person caught up in an unrelated traffic accident)
+- Pure women's rights stories with no trans-related framing or implications
+- Unrelated topics that happen to use words like "gender" in non-trans contexts (e.g. gender pay gap statistics with no trans angle)
+
+When in doubt, mark TRUE. False positives are recoverable; missing hostile coverage of trans people is the bigger failure.
+
+Respond ONLY with a JSON array of booleans, no other text.`;
 
 export async function aiFilterTransRelevant(items: Array<{ title?: string }>): Promise<boolean[]> {
   if (items.length === 0) return [];

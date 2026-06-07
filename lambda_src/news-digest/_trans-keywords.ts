@@ -113,17 +113,86 @@ export const LEGAL_TERMS_INTL = [
 
 // Hostile/anti-trans framing. For tracking what hostile outlets are saying.
 export const HOSTILE_FRAMING = [
+  // Anti-trans rhetorical framing
   'gender ideology',
   'radical gender ideology',
   'trans ideology',
   'trans agenda',
   'gender extremism',
   'gender critical',
+  'gender-critical',
   'trans debate',
-  'protecting women and girls',     // ⚠️ both legitimate and used as anti-trans framing
-  'biological sex',                 // ⚠️ used both scientifically and as framing tool
-  'sex-based rights',
   'TERF',                           // tracker term — surfaces both critique-of and use-of
+
+  // "Single-sex spaces" framing — almost always trans-targeting in current discourse
+  'single-sex spaces',
+  'single sex spaces',
+  'sex-segregated spaces',
+  'women-only spaces',
+  'women only spaces',
+  'female-only spaces',
+
+  // "Biological sex" framing — when used in policy/rights context, targets trans inclusion
+  'biological sex',
+  'biological male',
+  'biological males',
+  'biological female',
+  'biological females',
+  'biological woman',
+  'biological women',
+  'biological man',
+  'biological men',
+  'adult human female',             // explicit anti-trans slogan
+  'adult human male',
+
+  // "Sex-based" framing
+  'sex-based rights',
+  'sex based rights',
+
+  // Women's sport / changing rooms framing
+  'protecting women and girls',
+  'women and girls',                // when paired with sport/spaces context
+  "women's sport",
+  "women's sports",
+  'female athletes',
+  "girls' sport",
+  "girls' sports",
+  'changing rooms',
+  'female changing rooms',
+  'women-only changing',
+
+  // Prison / hospital / domestic violence shelter framing
+  'male-bodied',
+  'female-bodied',
+  'female prison',
+  "women's prison",
+  'female ward',
+  "women's ward",
+  'female refuge',
+  "women's refuge",
+
+  // Youth / education framing — hostile outlets target trans youth via these terms
+  'gender confused',
+  'gender confusion',
+  'social contagion',
+  'rapid onset gender dysphoria',
+  'ROGD',
+  'transing kids',
+  'transing children',
+  'trans kids',                     // both supportive and hostile use this
+  'gender questioning',
+  'gender-questioning',
+
+  // Detransition framing (already in DETRANS_TERMS but worth including in hostile context)
+  'irreversible damage',
+  'mutilation',
+
+  // Toilet / bathroom framing
+  'female toilets',
+  'male toilets',
+  "women's toilets",
+  "men's toilets",
+  'mixed-sex toilets',
 ];
 
 // Public figures who appear repeatedly in trans news coverage.
