@@ -39,6 +39,8 @@ module "lambdas" {
   digest_bucket_name   = module.static_site.digest_bucket_name
   ssm_prefix           = module.ssm.prefix
   origin_verify_secret = var.origin_verify_secret
+  pushover_token       = var.pushover_token
+  pushover_user        = var.pushover_user
 }
 
 module "api_gateway" {

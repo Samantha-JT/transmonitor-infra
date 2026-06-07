@@ -12,6 +12,16 @@ variable "origin_verify_secret" {
   sensitive = true
 }
 
+variable "pushover_token" {
+  type      = string
+  sensitive = true
+}
+
+variable "pushover_user" {
+  type      = string
+  sensitive = true
+}
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
@@ -28,6 +38,12 @@ locals {
     AWS_BEDROCK_REGION   = "eu-west-1"
     AWS_BEDROCK_MODEL_ID = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
   }
+
+  feed_ingestor_env = merge(local.common_env, {
+    FEED_TIMEOUT_MS = "5000"
+    PUSHOVER_TOKEN  = var.pushover_token
+    PUSHOVER_USER   = var.pushover_user
+  })
 
   vpc_config = {
     subnet_ids         = var.private_subnet_ids
@@ -226,7 +242,7 @@ resource "aws_lambda_function" "feed_ingestor" {
   memory_size      = 512
   filename         = data.archive_file.feed_ingestor.output_path
   source_code_hash = data.archive_file.feed_ingestor.output_base64sha256
-  environment { variables = local.common_env }
+  environment { variables = local.feed_ingestor_env }
   vpc_config {
     subnet_ids         = local.vpc_config.subnet_ids
     security_group_ids = local.vpc_config.security_group_ids

@@ -5,8 +5,8 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
   trans: {
     legal: [
       { name: 'Erin in the Morning', url: 'https://www.erininthemorning.com/feed' },
-      { name: 'Trans Legislation Tracker', url: 'https://translegislation.com/rss.xml' },
-      { name: 'ACLU LGBT News', url: 'https://www.aclu.org/news/lgbtq-rights/feed' },
+      // DISABLED 2026-06-07: persistent 404/403 in Lambda logs: { name: 'Trans Legislation Tracker', url: 'https://translegislation.com/rss.xml' },
+      { name: 'ACLU LGBT News', url: 'https://www.aclu.org/news/by-issue/lgbtq-rights/feed' },
       { name: 'Lambda Legal', url: gn('site:lambdalegal.org when:7d') },
       { name: 'Law Dork', url: 'https://www.lawdork.com/feed' },
       { name: 'Good Law Project', url: 'https://goodlawproject.org/feed/' },
@@ -42,7 +42,7 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
       { name: 'Them', url: 'https://www.them.us/feed/rss' },
       { name: 'Xtra Magazine', url: 'https://xtramagazine.com/feed' },
       { name: 'Autostraddle', url: 'https://www.autostraddle.com/feed/' },
-      { name: 'The 19th', url: 'https://19thnews.org/category/lgbtq/feed/' },
+      { name: 'The 19th', url: 'https://19thnews.org/feed/' },
       { name: 'Assigned Media', url: 'https://assignedmedia.org/feed' },
       { name: 'TransLash News', url: 'https://translash.org/feed' },
       { name: 'What The Trans!?', url: 'https://whatthetrans.com/feed/' },
