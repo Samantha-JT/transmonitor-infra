@@ -59,6 +59,11 @@ resource "cloudflare_workers_script" "api_proxy" {
   })
 
   module = true
+
+  secret_text_binding {
+    name = "ORIGIN_VERIFY_SECRET"
+    text = var.origin_verify_secret
+  }
 }
 
 # ── Worker routes ─────────────────────────────────────────────────────────────
@@ -152,6 +157,16 @@ resource "cloudflare_workers_script" "security" {
   }
 
   secret_text_binding {
+    name = "PUSHOVER_TOKEN"
+    text = var.pushover_token
+  }
+
+  secret_text_binding {
+    name = "PUSHOVER_USER"
+    text = var.pushover_user
+  }
+
+  secret_text_binding {
     name = "CF_API_TOKEN"
     text = var.cf_api_token
   }
@@ -169,3 +184,5 @@ resource "cloudflare_workers_route" "security_catchall" {
 # ── New variables to add to variables section ─────────────────────────────────
 
 variable "cf_api_token"      { sensitive = true }
+variable "pushover_token"    { sensitive = true }
+variable "pushover_user"     { sensitive = true }

@@ -68,6 +68,8 @@ module "cloudflare" {
   s3_website_endpoint  = module.static_site.website_endpoint
   origin_verify_secret = var.origin_verify_secret
   cf_api_token         = var.cloudflare_api_token
+  pushover_token       = var.pushover_token
+  pushover_user        = var.pushover_user
 }
 
 module "scraper" {
