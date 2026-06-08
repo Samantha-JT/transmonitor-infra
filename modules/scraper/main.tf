@@ -103,7 +103,7 @@ resource "aws_instance" "scraper" {
   iam_instance_profile = aws_iam_instance_profile.scraper.name
 
   root_block_device {
-    volume_size = 20
+    volume_size = 60
     volume_type = "gp3"
   }
 
