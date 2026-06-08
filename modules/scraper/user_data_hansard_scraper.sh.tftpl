@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AWS_REGION="eu-west-1"
+SCRAPER_DIR="/home/ssm-user/hansard-scraper"
+STATIC_BUCKET="${static_bucket_name}"
+ARCHIVE_BUCKET="${archive_bucket_name}"
+BOOTSTRAP_KEY="bootstrap/hansard-scraper.tar.gz"
+
+dnf install -y python3 rsync gzip tar awscli || true
+
+mkdir -p /home/ssm-user
+chown ssm-user:ssm-user /home/ssm-user || true
+
+# Restore scraper code/data if the instance has been rebuilt and the bootstrap archive exists.
+if [ ! -f "$SCRAPER_DIR/scraper.py" ]; then
+  mkdir -p "$SCRAPER_DIR"
+
+  if aws s3api head-object \
+      --bucket "$ARCHIVE_BUCKET" \
+      --key "$BOOTSTRAP_KEY" \
+      --region "$AWS_REGION" >/dev/null 2>&1; then
+
+    aws s3 cp \
+      "s3://$ARCHIVE_BUCKET/$BOOTSTRAP_KEY" \
+      /tmp/hansard-scraper.tar.gz \
+      --region "$AWS_REGION"
+
+    tar -xzf /tmp/hansard-scraper.tar.gz -C /home/ssm-user
+    rm -f /tmp/hansard-scraper.tar.gz
+  fi
+fi
+
+mkdir -p "$SCRAPER_DIR"
+chown -R ssm-user:ssm-user "$SCRAPER_DIR"
+
+cat > "$SCRAPER_DIR/upload-db.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /home/ssm-user/hansard-scraper
+
+test -s hansard_trans.db
+
+aws s3 cp hansard_trans.db \
+  s3://${static_bucket_name}/hansard_trans.db \
+  --region eu-west-1 \
+  --content-type application/octet-stream \
+  --cache-control "public, max-age=86400"
+
+gzip -9 -c hansard_trans.db > /tmp/hansard_trans.db.gz
+
+aws s3 cp /tmp/hansard_trans.db.gz \
+  s3://${static_bucket_name}/hansard_trans.db.gz \
+  --region eu-west-1 \
+  --content-type application/octet-stream \
+  --content-encoding gzip \
+  --cache-control "public, max-age=86400"
+
+rm -f /tmp/hansard_trans.db.gz
+SCRIPT
+
+cat > "$SCRAPER_DIR/run-update-and-upload.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /home/ssm-user/hansard-scraper
+
+/usr/bin/python3 scraper.py update
+
+./upload-db.sh
+SCRIPT
+
+chmod +x "$SCRAPER_DIR/upload-db.sh" "$SCRAPER_DIR/run-update-and-upload.sh"
+chown ssm-user:ssm-user "$SCRAPER_DIR/upload-db.sh" "$SCRAPER_DIR/run-update-and-upload.sh"
+
+cat > /etc/systemd/system/hansard-db-upload.service <<'EOF_SERVICE'
+[Unit]
+Description=Upload TransMonitor Hansard SQLite DB to S3
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ssm-user
+WorkingDirectory=/home/ssm-user/hansard-scraper
+ExecStart=/home/ssm-user/hansard-scraper/upload-db.sh
+EOF_SERVICE
+
+cat > /etc/systemd/system/hansard-db-upload.timer <<'EOF_TIMER'
+[Unit]
+Description=Upload TransMonitor Hansard SQLite DB to S3 daily
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
+EOF_TIMER
+
+cat > /etc/systemd/system/hansard-scraper-update.service <<'EOF_SERVICE'
+[Unit]
+Description=Update TransMonitor Hansard database and upload to S3
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ssm-user
+WorkingDirectory=/home/ssm-user/hansard-scraper
+ExecStart=/home/ssm-user/hansard-scraper/run-update-and-upload.sh
+EOF_SERVICE
+
+cat > /etc/systemd/system/hansard-scraper-update.timer <<'EOF_TIMER'
+[Unit]
+Description=Run TransMonitor Hansard scraper update weekly
+
+[Timer]
+OnCalendar=Sun 02:00:00
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
+EOF_TIMER
+
+systemctl daemon-reload
+systemctl enable hansard-db-upload.timer
+systemctl enable hansard-scraper-update.timer
+systemctl start hansard-db-upload.timer
+systemctl start hansard-scraper-update.timer

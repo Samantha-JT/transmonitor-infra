@@ -102,6 +102,13 @@ resource "aws_instance" "scraper" {
   subnet_id            = var.subnet_id
   iam_instance_profile = aws_iam_instance_profile.scraper.name
 
+  user_data = templatefile("${path.module}/user_data_hansard_scraper.sh.tftpl", {
+    static_bucket_name  = "${var.name_prefix}-static"
+    archive_bucket_name = "${var.name_prefix}-archive"
+  })
+
+  user_data_replace_on_change = false
+
   root_block_device {
     volume_size = 60
     volume_type = "gp3"
