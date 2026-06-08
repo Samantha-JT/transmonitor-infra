@@ -878,6 +878,26 @@ const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
   'TransVitae': 'transvitae.com',
   'Transgender Feed': 'transgenderfeed.com',
   'TransLash': 'translash.org',
+  'Daily Mail Backfill': 'dailymail.co.uk',
+  'The Sun Backfill': 'thesun.co.uk',
+  'The Spectator Backfill': 'spectator.co.uk',
+  'TalkTV Backfill': 'talk.tv',
+  'Daily Express Backfill': 'express.co.uk',
+  'The i Backfill': 'inews.co.uk',
+  'HuffPost UK Backfill': 'huffingtonpost.co.uk',
+  'Channel 4 News Backfill': 'channel4.com',
+  'Vice UK Backfill': 'vice.com',
+  'Assigned Media Backfill': 'assignedmedia.org',
+  'Attitude Backfill': 'attitude.co.uk',
+  'DIVA Magazine Backfill': 'divamag.co.uk',
+  'Erin Backfill': 'erininthemorning.com',
+  'GATE Backfill': 'gate.ngo',
+  'GLAAD Backfill': 'glaad.org',
+  'Stonewall Backfill': 'stonewall.org.uk',
+  'Trans Equality Backfill': 'transequality.org',
+  'Trans Law Center Backfill': 'transgenderlawcenter.org',
+  'TransActual Backfill': 'transactual.org.uk',
+  'TransLash Backfill': 'translash.org',
   'Daily Mail Search': 'dailymail.co.uk',
   'The Sun Search': 'thesun.co.uk',
   'The Spectator Search': 'spectator.co.uk',
@@ -890,6 +910,7 @@ const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
   'Attitude Search': 'attitude.co.uk',
   'DIVA Magazine Search': 'divamag.co.uk',
   'Erin Search': 'erininthemorning.com',
+  'Erin in the Morning': 'erininthemorning.com',
   'GATE Search': 'gate.ngo',
   'GLAAD Search': 'glaad.org',
   'Stonewall Search': 'stonewall.org.uk',
@@ -905,6 +926,13 @@ const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
   'Them': 'them.us',
   'TransActual UK': 'transactual.org.uk',
   'TGEU News': 'tgeu.org',
+  'Asia-Pacific Trans News': 'ndtv.com',
+  'Reuters Trans Coverage': 'reuters.com',
+  'STAT News LGBTQ': 'statnews.com',
+  'Puberty Blocker Rulings': 'advocate.com',
+  'Gender Analysis': 'genderanalysis.net',
+  'Lambda Legal': 'lambdalegal.org',
+  'Good Law Project': 'goodlawproject.org',
   'GATE Global': 'gate.ngo',
   'Guardian Transgender': 'theguardian.com',
   'Independent Trans': 'independent.co.uk',
@@ -942,11 +970,18 @@ function simpleHash(s: string): string {
 async function scoreAndIngestBias(item: { link: string; title: string; source: string; publishedAt: number }): Promise<void> {
   const url = item.link ?? '';
   const domain = extractBiasDomain(url, item.source);
-  if (!domain) return;
+  if (!domain) {
+    return;
+  }
   // Skip empty/placeholder titles — just the source name or too short to score meaningfully
   const titleClean = item.title.trim();
-  if (titleClean.length < 20) return;
-  if (titleClean === item.source || titleClean === `- ${item.source}`) return;
+  if (titleClean.length < 20) {
+    return;
+  }
+  if (titleClean === item.source || titleClean === `- ${item.source}`) {
+    console.log('[media-bias] skip placeholder-title', { domain, source: item.source, title: item.title });
+    return;
+  }
   if (/^-\s*$/.test(titleClean)) return;
 
   const redisUrl = process.env.REDIS_URL;
@@ -1036,10 +1071,16 @@ Respond ONLY with valid JSON, no markdown:
     const dedupKey    = `media:dedup:${simpleHash(url)}`;
 
     // Skip if Bedrock flagged article as not trans-related
-    if (parsed.relevant === false) { await redis.disconnect(); return; }
+    if (parsed.relevant === false) {
+      await redis.disconnect();
+      return;
+    }
     // Skip if already scored this article
     const alreadyScored = await redis.get(dedupKey);
-    if (alreadyScored) { await redis.disconnect(); return; }
+    if (alreadyScored) {
+      await redis.disconnect();
+      return;
+    }
 
     await redis.set(dedupKey, '1', { EX: 60 * 60 * 24 * 7 }); // 7-day dedup window
     await redis.lPush(articlesKey, record);
@@ -1067,6 +1108,7 @@ Respond ONLY with valid JSON, no markdown:
     });
 
     await redis.sAdd('media:bias:index', domain);
+    console.log('[media-bias] wrote domain', domain, 'source', item.source, 'title', item.title);
     await redis.disconnect();
 
   } catch (err) {

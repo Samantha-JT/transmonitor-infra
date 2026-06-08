@@ -191,6 +191,46 @@ var VARIANT_FEEDS = {
       { name: "HuffPost UK", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:huffingtonpost.co.uk when:30d') },
       { name: "Metro Trans", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:30d') },
       { name: "TalkTV", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:talk.tv when:30d') },
+      { name: "Daily Mail Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:dailymail.co.uk when:14d') },
+      { name: "The Sun Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:thesun.co.uk when:14d') },
+      { name: "The Spectator Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:spectator.co.uk when:30d') },
+      { name: "TalkTV Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:talk.tv when:30d') },
+      { name: "Daily Express Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:express.co.uk when:30d') },
+      { name: "The i Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:inews.co.uk when:30d') },
+      { name: "HuffPost UK Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:huffingtonpost.co.uk when:30d') },
+      { name: "Channel 4 News Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:channel4.com/news when:30d') },
+      { name: "Assigned Media Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:assignedmedia.org when:30d') },
+      { name: "Attitude Search", url: gnGB('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:attitude.co.uk when:30d') },
+      { name: "DIVA Magazine Search", url: gnGB('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:diva-magazine.com OR site:divamag.co.uk when:30d') },
+      { name: "Erin Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:erininthemorning.com when:30d') },
+      { name: "GATE Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:gate.ngo when:90d') },
+      { name: "GLAAD Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:glaad.org when:30d') },
+      { name: "Stonewall Search", url: gnGB('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:stonewall.org.uk when:90d') },
+      { name: "Trans Equality Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:transequality.org when:90d') },
+      { name: "Trans Law Center Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:transgenderlawcenter.org when:90d') },
+      { name: "TransActual Search", url: gnGB('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:transactual.org.uk when:90d') },
+      { name: "TransLash Search", url: gn('(transgender OR "trans rights" OR "gender affirming" OR "gender-affirming" OR nonbinary OR "trans youth" OR "trans healthcare") site:translash.org when:30d') },
+      { name: "Vice UK Search", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:vice.com/en/topic/uk OR site:vice.com when:30d') },
+      { name: "Daily Mail Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:dailymail.co.uk when:365d') },
+      { name: "The Sun Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:thesun.co.uk when:365d') },
+      { name: "The Spectator Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:spectator.co.uk when:365d') },
+      { name: "TalkTV Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:talk.tv when:365d') },
+      { name: "Daily Express Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:express.co.uk when:365d') },
+      { name: "The i Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:inews.co.uk when:365d') },
+      { name: "HuffPost UK Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:huffingtonpost.co.uk when:365d') },
+      { name: "Channel 4 News Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:channel4.com/news when:365d') },
+      { name: "Vice UK Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "single-sex" OR "biological male" OR "biological female" OR "Cass Review" OR "gender-critical" OR "gender ideology") site:vice.com when:365d') },
+      { name: "Assigned Media Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:assignedmedia.org when:365d') },
+      { name: "Attitude Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:attitude.co.uk when:365d') },
+      { name: "DIVA Magazine Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") (site:diva-magazine.com OR site:divamag.co.uk) when:365d') },
+      { name: "Erin Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:erininthemorning.com when:365d') },
+      { name: "GATE Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:gate.ngo when:365d') },
+      { name: "GLAAD Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:glaad.org when:365d') },
+      { name: "Stonewall Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:stonewall.org.uk when:365d') },
+      { name: "Trans Equality Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:transequality.org when:365d') },
+      { name: "Trans Law Center Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:transgenderlawcenter.org when:365d') },
+      { name: "TransActual Backfill", url: gnGB('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:transactual.org.uk when:365d') },
+      { name: "TransLash Backfill", url: gn('("transgender" OR "trans rights" OR "trans woman" OR "trans women" OR "trans man" OR "non-binary" OR nonbinary OR "gender identity" OR "gender affirming" OR "gender-affirming" OR "trans healthcare" OR "trans youth") site:translash.org when:365d') },
       { name: "ITV News", url: gnGB('(transgender OR "trans rights" OR "single-sex" OR "biological male" OR "biological female" OR "gender ideology" OR "adult human female" OR "gender-critical" OR "Cass Review") site:itv.com when:3d') },
       { name: "Metro", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:3d') }
     ],
@@ -1482,6 +1522,47 @@ var BIAS_SOURCE_NAME_MAP = {
   "TransVitae": "transvitae.com",
   "Transgender Feed": "transgenderfeed.com",
   "TransLash": "translash.org",
+  "Daily Mail Backfill": "dailymail.co.uk",
+  "The Sun Backfill": "thesun.co.uk",
+  "The Spectator Backfill": "spectator.co.uk",
+  "TalkTV Backfill": "talk.tv",
+  "Daily Express Backfill": "express.co.uk",
+  "The i Backfill": "inews.co.uk",
+  "HuffPost UK Backfill": "huffingtonpost.co.uk",
+  "Channel 4 News Backfill": "channel4.com",
+  "Vice UK Backfill": "vice.com",
+  "Assigned Media Backfill": "assignedmedia.org",
+  "Attitude Backfill": "attitude.co.uk",
+  "DIVA Magazine Backfill": "divamag.co.uk",
+  "Erin Backfill": "erininthemorning.com",
+  "GATE Backfill": "gate.ngo",
+  "GLAAD Backfill": "glaad.org",
+  "Stonewall Backfill": "stonewall.org.uk",
+  "Trans Equality Backfill": "transequality.org",
+  "Trans Law Center Backfill": "transgenderlawcenter.org",
+  "TransActual Backfill": "transactual.org.uk",
+  "TransLash Backfill": "translash.org",
+  "Daily Mail Search": "dailymail.co.uk",
+  "The Sun Search": "thesun.co.uk",
+  "The Spectator Search": "spectator.co.uk",
+  "TalkTV Search": "talk.tv",
+  "Daily Express Search": "express.co.uk",
+  "The i Search": "inews.co.uk",
+  "HuffPost UK Search": "huffingtonpost.co.uk",
+  "Channel 4 News Search": "channel4.com",
+  "Assigned Media Search": "assignedmedia.org",
+  "Attitude Search": "attitude.co.uk",
+  "DIVA Magazine Search": "divamag.co.uk",
+  "Erin Search": "erininthemorning.com",
+  "Erin in the Morning": "erininthemorning.com",
+  "GATE Search": "gate.ngo",
+  "GLAAD Search": "glaad.org",
+  "Stonewall Search": "stonewall.org.uk",
+  "Trans Equality Search": "transequality.org",
+  "Trans Law Center Search": "transgenderlawcenter.org",
+  "TransActual Search": "transactual.org.uk",
+  "TransLash Search": "translash.org",
+  "Vice UK Search": "vice.com",
   "Assigned Media": "assignedmedia.org",
   "Trans Equality": "transequality.org",
   "Trans Law Center": "transgenderlawcenter.org",
@@ -1489,6 +1570,13 @@ var BIAS_SOURCE_NAME_MAP = {
   "Them": "them.us",
   "TransActual UK": "transactual.org.uk",
   "TGEU News": "tgeu.org",
+  "Asia-Pacific Trans News": "ndtv.com",
+  "Reuters Trans Coverage": "reuters.com",
+  "STAT News LGBTQ": "statnews.com",
+  "Puberty Blocker Rulings": "advocate.com",
+  "Gender Analysis": "genderanalysis.net",
+  "Lambda Legal": "lambdalegal.org",
+  "Good Law Project": "goodlawproject.org",
   "GATE Global": "gate.ngo",
   "Guardian Transgender": "theguardian.com",
   "Independent Trans": "independent.co.uk"
@@ -1522,10 +1610,17 @@ function simpleHash(s) {
 async function scoreAndIngestBias(item) {
   const url = item.link ?? "";
   const domain = extractBiasDomain(url, item.source);
-  if (!domain) return;
+  if (!domain) {
+    return;
+  }
   const titleClean = item.title.trim();
-  if (titleClean.length < 20) return;
-  if (titleClean === item.source || titleClean === `- ${item.source}`) return;
+  if (titleClean.length < 20) {
+    return;
+  }
+  if (titleClean === item.source || titleClean === `- ${item.source}`) {
+    console.log("[media-bias] skip placeholder-title", { domain, source: item.source, title: item.title });
+    return;
+  }
   if (/^-\s*$/.test(titleClean)) return;
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) return;
@@ -1636,6 +1731,7 @@ Respond ONLY with valid JSON, no markdown:
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     });
     await redis.sAdd("media:bias:index", domain);
+    console.log("[media-bias] wrote domain", domain, "source", item.source, "title", item.title);
     await redis.disconnect();
   } catch (err) {
     console.warn("[bias] score/ingest failed for", domain, err.message);

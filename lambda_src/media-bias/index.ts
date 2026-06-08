@@ -144,27 +144,24 @@ export async function ingestArticle(
 }
 
 async function handleGetSources(redis: ReturnType<typeof createClient>) {
-  const domains = await redis.sMembers(biasIndexKey());
-  if (!domains.length) {
-    const seed = Object.values(SOURCE_REGISTRY).map(s => ({
-      domain:        s.domain,
-      name:          s.name,
-      editorialBias: s.editorialBias,
-      articleCount:  0,
-      avgScore:      null,
-      avgLabel:      null,
-      lastSeenAt:    null,
-    }));
-    return { statusCode: 200, body: JSON.stringify({ sources: seed }) };
-  }
+  const indexedDomains = await redis.sMembers(biasIndexKey());
+
+  // Always include every configured source, even if it has not yet been scored.
+  // Also include any historic Redis-only domains not currently in SOURCE_REGISTRY.
+  const domains = Array.from(new Set([
+    ...Object.keys(SOURCE_REGISTRY),
+    ...indexedDomains,
+  ]));
 
   const sources = await Promise.all(
     domains.map(async (domain) => {
       const meta = await redis.hGetAll(sourceMetaKey(domain));
+      const registry = SOURCE_REGISTRY[domain];
+
       return {
         domain,
-        name:          SOURCE_REGISTRY[domain]?.name ?? meta?.name ?? domain,
-        editorialBias: SOURCE_REGISTRY[domain]?.editorialBias ?? meta?.editorialBias ?? 'neutral',
+        name:          registry?.name ?? meta?.name ?? domain,
+        editorialBias: registry?.editorialBias ?? meta?.editorialBias ?? 'neutral',
         articleCount:  parseInt(meta?.articleCount ?? '0', 10),
         avgScore:      meta?.avgScore ? parseInt(meta.avgScore, 10) : null,
         avgLabel:      meta?.avgLabel ?? null,
@@ -172,7 +169,13 @@ async function handleGetSources(redis: ReturnType<typeof createClient>) {
       };
     })
   );
-  sources.sort((a, b) => b.articleCount - a.articleCount);
+
+  sources.sort((a, b) => {
+    const countDiff = b.articleCount - a.articleCount;
+    if (countDiff !== 0) return countDiff;
+    return a.name.localeCompare(b.name);
+  });
+
   return { statusCode: 200, body: JSON.stringify({ sources }) };
 }
 
