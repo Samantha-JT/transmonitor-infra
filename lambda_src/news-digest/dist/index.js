@@ -935,8 +935,8 @@ function parseRssXml(xml, feed, variant) {
     const threat = classifyByKeyword(title, variant);
     const isAlert = threat.level === "critical" || threat.level === "high";
     items.push({
-      source: feed.name,
-      title,
+      source: inferDigestDisplaySource(feed.name, link, title),
+      title: isGoogleNewsUrlForDisplay(link) ? cleanGoogleNewsTitleForDisplay(title) : title,
       link,
       publishedAt,
       isAlert,
@@ -1035,8 +1035,8 @@ async function readStoryTracks(titleHashes) {
 }
 function toProtoItem(item, storyMeta) {
   return {
-    source: item.source,
-    title: item.title,
+    source: inferDigestDisplaySource(item.source, item.link, item.title),
+    title: isGoogleNewsUrlForDisplay(item.link) ? cleanGoogleNewsTitleForDisplay(item.title) : item.title,
     link: item.link,
     publishedAt: item.publishedAt,
     isAlert: item.isAlert,
@@ -1055,18 +1055,20 @@ function toProtoItem(item, storyMeta) {
 async function listFeedDigest(ctx, req) {
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : "full";
   const lang = req.lang || "en";
+  const refresh = req.refresh === true;
   const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
   const fallbackKey = `${variant}:${lang}`;
   const empty = () => ({ categories: {}, feedStatuses: {}, generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
   try {
-    const fresh = await cachedFetchJson(
+    const buildFreshDigest = async () => {
+      const result = await buildDigest(variant, lang);
+      const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);
+      return totalItems > 0 ? result : null;
+    };
+    const fresh = refresh ? await buildFreshDigest() : await cachedFetchJson(
       digestCacheKey,
       900,
-      async () => {
-        const result = await buildDigest(variant, lang);
-        const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);
-        return totalItems > 0 ? result : null;
-      }
+      buildFreshDigest
     );
     if (fresh === null) {
       markNoCacheResponse(ctx.request);
@@ -1311,11 +1313,25 @@ async function buildDigest(variant, lang) {
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
       const biasTargets = filteredSliced.filter((item) => item.link);
-      if (biasTargets.length > 0) {
-        await Promise.race([
-          Promise.allSettled(biasTargets.map((item) => scoreAndIngestBias(item))),
-          new Promise((resolve) => setTimeout(resolve, 2e4))
-        ]);
+      const biasScoringBudgetMs = Number(process.env.BIAS_SCORING_BUDGET_MS ?? "8000");
+      const biasMaxPerCategory = Number(process.env.BIAS_MAX_PER_CATEGORY ?? "3");
+      const biasDeadline = now + biasScoringBudgetMs;
+      let scoredThisCategory = 0;
+      for (const item of biasTargets) {
+        if (scoredThisCategory >= biasMaxPerCategory) break;
+        if (Date.now() > biasDeadline) {
+          console.warn("[media-bias] budget exhausted, skipping remaining targets");
+          break;
+        }
+        try {
+          await Promise.race([
+            scoreAndIngestBias(item),
+            new Promise((resolve) => setTimeout(resolve, 1500))
+          ]);
+        } catch (err) {
+          console.warn("[media-bias] score/ingest failed:", err.message);
+        }
+        scoredThisCategory++;
       }
       categories[category] = {
         items: filteredSliced.map((item) => {
@@ -1364,9 +1380,10 @@ var handler = async (event) => {
   }
   const variant = VALID_VARIANTS_SET.has(event.queryStringParameters?.variant ?? "") ? event.queryStringParameters?.variant ?? "trans" : "trans";
   const lang = event.queryStringParameters?.lang ?? "en";
+  const refresh = ["1", "true", "yes"].includes((event.queryStringParameters?.refresh ?? "").toLowerCase()) || ["1", "true", "yes"].includes((event.queryStringParameters?.force ?? "").toLowerCase()) || ["1", "true", "yes"].includes((event.queryStringParameters?.bypassCache ?? "").toLowerCase());
   const ctx = { request: {} };
   try {
-    const result = await listFeedDigest(ctx, { variant, lang });
+    const result = await listFeedDigest(ctx, { variant, lang, refresh });
     if (fallbackCache2.size > 50) fallbackCache2.clear();
     fallbackCache2.set(`${variant}:${lang}`, { data: result, ts: Date.now() });
     return {
@@ -1581,12 +1598,40 @@ var BIAS_SOURCE_NAME_MAP = {
   "Guardian Transgender": "theguardian.com",
   "Independent Trans": "independent.co.uk"
 };
-function extractBiasDomain(url, sourceName) {
-  if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
-    return BIAS_SOURCE_NAME_MAP[sourceName];
-  }
+function isGoogleNewsUrlForDisplay(url) {
   try {
-    const h = new URL(url).hostname.replace(/^www\./, "");
+    const h = new URL(url).hostname.toLowerCase().replace(/^www\./, "").replace(/^amp\./, "").replace(/^m\./, "");
+    return h === "news.google.com" || h.endsWith(".google.com");
+  } catch {
+    return false;
+  }
+}
+function extractPublisherSuffixForDisplay(title) {
+  const match = title.match(/\s[-–—]\s([^—–-]{2,100})\s*$/);
+  if (!match) return null;
+  const publisher = match[1].trim();
+  if (!publisher) return null;
+  if (/^https?:\/\//i.test(publisher)) return null;
+  if (publisher.length < 2 || publisher.length > 100) return null;
+  return publisher;
+}
+function cleanGoogleNewsTitleForDisplay(title) {
+  return title.replace(/\s[-–—]\s([^—–-]{2,100})\s*$/, "").trim();
+}
+function inferDigestDisplaySource(feedSource, link, title) {
+  if (!isGoogleNewsUrlForDisplay(link)) return feedSource;
+  const publisher = extractPublisherSuffixForDisplay(title);
+  return publisher ?? feedSource;
+}
+function normaliseBiasHost(hostname) {
+  return hostname.toLowerCase().replace(/^www\./, "").replace(/^amp\./, "").replace(/^m\./, "");
+}
+function extractBiasDomainFromUrl(url) {
+  try {
+    const h = normaliseBiasHost(new URL(url).hostname);
+    if (h === "news.google.com" || h.endsWith(".google.com")) {
+      return null;
+    }
     for (const k of BIAS_SOURCE_REGISTRY) {
       if (h === k || h.endsWith("." + k)) return k;
     }
@@ -1594,6 +1639,88 @@ function extractBiasDomain(url, sourceName) {
   } catch {
     return null;
   }
+}
+function extractPublisherSuffix(title) {
+  const m = title.match(/\s+-\s+(.{2,100})\s*$/);
+  return m?.[1]?.trim() ?? null;
+}
+var BIAS_TITLE_PUBLISHER_MAP = {
+  "BBC": "bbc.co.uk",
+  "BBC News": "bbc.co.uk",
+  "Reuters": "reuters.com",
+  "The Guardian": "theguardian.com",
+  "The Independent": "independent.co.uk",
+  "The Telegraph": "telegraph.co.uk",
+  "The Times": "thetimes.co.uk",
+  "Daily Mail": "dailymail.co.uk",
+  "The Sun": "thesun.co.uk",
+  "PinkNews": "pinknews.co.uk",
+  "PinkNews | Latest lesbian, gay, bi and trans news": "pinknews.co.uk",
+  "Advocate.com": "advocate.com",
+  "The Advocate": "advocate.com",
+  "GLAAD": "glaad.org",
+  "GLAD Law": "glad.org",
+  "Good Law Project": "goodlawproject.org",
+  "NDTV": "ndtv.com",
+  "STAT": "statnews.com",
+  "STAT News": "statnews.com",
+  "The Boston Globe": "bostonglobe.com",
+  "The Week": "theweek.com",
+  "Catholic World Report": "catholicworldreport.com",
+  "National Review": "nationalreview.com",
+  "The Washington Post": "washingtonpost.com",
+  "The Olympian": "theolympian.com",
+  "The Washington Stand": "washingtonstand.com",
+  "CBN": "cbn.com",
+  "cbn.com": "cbn.com",
+  "AOL.com": "aol.com",
+  "aberdareonline.co.uk": "aberdareonline.co.uk",
+  "Idaho News 6": "idahonews6.com",
+  "KBOI": "idahonews.com",
+  "The Spokesman-Review": "spokesman.com",
+  "The Salt Lake Tribune": "sltrib.com",
+  "TheGrio": "thegrio.com",
+  "UCLA": "ucla.edu",
+  "Newsroom | UCLA": "ucla.edu",
+  "ILGA World": "ilga.org",
+  "The Weekly Dish | Andrew Sullivan": "andrewsullivan.substack.com",
+  "American Kennel Club": "akc.org",
+  "Lambda Legal": "lambdalegal.org",
+  "donoharmmedicine.org": "donoharmmedicine.org",
+  "\u6BCE\u65E5\u65B0\u805E": "mainichi.jp",
+  "Operation Sports": "operationsports.com",
+  "Channel 4": "channel4.com",
+  "The New York Times": "nytimes.com"
+};
+function isGoogleNewsUrl(url) {
+  try {
+    const h = normaliseBiasHost(new URL(url).hostname);
+    return h === "news.google.com" || h.endsWith(".google.com");
+  } catch {
+    return false;
+  }
+}
+function extractBiasDomain(url, sourceName, title) {
+  const urlDomain = extractBiasDomainFromUrl(url);
+  if (urlDomain) return urlDomain;
+  if (title && isGoogleNewsUrl(url)) {
+    const publisher = extractPublisherSuffix(title);
+    if (publisher && BIAS_TITLE_PUBLISHER_MAP[publisher]) {
+      return BIAS_TITLE_PUBLISHER_MAP[publisher];
+    }
+    console.log("[media-bias] unresolved-google-news-publisher", {
+      source: sourceName ?? null,
+      title,
+      publisherSuffix: publisher,
+      link: url,
+      aliasDomain: sourceName ? BIAS_SOURCE_NAME_MAP[sourceName] ?? null : null
+    });
+    return null;
+  }
+  if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
+    return BIAS_SOURCE_NAME_MAP[sourceName];
+  }
+  return null;
 }
 function biasScoreToLabel(score) {
   if (score <= 20) return "hostile";
@@ -1609,8 +1736,15 @@ function simpleHash(s) {
 }
 async function scoreAndIngestBias(item) {
   const url = item.link ?? "";
-  const domain = extractBiasDomain(url, item.source);
+  const domain = extractBiasDomain(url, item.source, item.title);
   if (!domain) {
+    console.log("[media-bias] skip no-domain", {
+      source: item.source,
+      title: item.title,
+      link: url,
+      urlDomain: extractBiasDomainFromUrl(url),
+      aliasDomain: BIAS_SOURCE_NAME_MAP[item.source] ?? null
+    });
     return;
   }
   const titleClean = item.title.trim();

@@ -222,8 +222,8 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
     const isAlert = threat.level === 'critical' || threat.level === 'high';
 
     items.push({
-      source: feed.name,
-      title,
+      source: inferDigestDisplaySource(feed.name, link, title),
+      title: isGoogleNewsUrlForDisplay(link) ? cleanGoogleNewsTitleForDisplay(title) : title,
       link,
       publishedAt,
       isAlert,
@@ -377,8 +377,8 @@ async function readStoryTracks(titleHashes: string[]): Promise<Map<string, Story
 
 function toProtoItem(item: ParsedItem, storyMeta?: { firstSeen: number; mentionCount: number; sourceCount: number; phase: string }): unknown {
   return {
-    source: item.source,
-    title: item.title,
+    source: inferDigestDisplaySource(item.source, item.link, item.title),
+    title: isGoogleNewsUrlForDisplay(item.link) ? cleanGoogleNewsTitleForDisplay(item.title) : item.title,
     link: item.link,
     publishedAt: item.publishedAt,
     isAlert: item.isAlert,
@@ -397,10 +397,11 @@ function toProtoItem(item: ParsedItem, storyMeta?: { firstSeen: number; mentionC
 
 export async function listFeedDigest(
   ctx: unknown,
-  req: { variant: string; lang: string },
+  req: { variant: string; lang: string; refresh?: boolean },
 ): Promise<unknown> {
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : 'full';
   const lang = req.lang || 'en';
+  const refresh = req.refresh === true;
 
   const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
   const fallbackKey = `${variant}:${lang}`;
@@ -412,15 +413,19 @@ export async function listFeedDigest(
     // for the same key share a single buildDigest() run instead of fanning out
     // across all RSS feeds. Returning null skips the Redis write and caches a
     // neg-sentinel (120s) to absorb the request storm during degraded periods.
-    const fresh = await cachedFetchJson<unknown>(
-      digestCacheKey,
-      900,
-      async () => {
-        const result = await buildDigest(variant, lang);
-        const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);
-        return totalItems > 0 ? result : null;
-      },
-    );
+    const buildFreshDigest = async (): Promise<unknown | null> => {
+      const result = await buildDigest(variant, lang);
+      const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);
+      return totalItems > 0 ? result : null;
+    };
+
+    const fresh = refresh
+      ? await buildFreshDigest()
+      : await cachedFetchJson<unknown>(
+          digestCacheKey,
+          900,
+          buildFreshDigest,
+        );
 
     if (fresh === null) {
       markNoCacheResponse(ctx.request);
@@ -719,13 +724,32 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
         }
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
-      // Bias scoring — await with 20s hard cap so Lambda doesn't exit early
+      // Bias scoring — deadline-aware and sequential.
+      // This endpoint is an API Lambda with a 30s timeout. Do not fan out Bedrock/Redis
+      // work across every category; score a small number of targets and return safely.
       const biasTargets = filteredSliced.filter(item => item.link);
-      if (biasTargets.length > 0) {
-        await Promise.race([
-          Promise.allSettled(biasTargets.map(item => scoreAndIngestBias(item))),
-          new Promise<void>(resolve => setTimeout(resolve, 20_000)),
-        ]);
+      const biasScoringBudgetMs = Number(process.env.BIAS_SCORING_BUDGET_MS ?? '8000');
+      const biasMaxPerCategory = Number(process.env.BIAS_MAX_PER_CATEGORY ?? '3');
+      const biasDeadline = now + biasScoringBudgetMs;
+
+      let scoredThisCategory = 0;
+      for (const item of biasTargets) {
+        if (scoredThisCategory >= biasMaxPerCategory) break;
+        if (Date.now() > biasDeadline) {
+          console.warn('[media-bias] budget exhausted, skipping remaining targets');
+          break;
+        }
+
+        try {
+          await Promise.race([
+            scoreAndIngestBias(item),
+            new Promise<void>(resolve => setTimeout(resolve, 1500)),
+          ]);
+        } catch (err) {
+          console.warn('[media-bias] score/ingest failed:', (err as Error).message);
+        }
+
+        scoredThisCategory++;
       }
       categories[category] = {
         items: filteredSliced.map(item => {
@@ -781,9 +805,12 @@ export const handler = async (event: { queryStringParameters?: Record<string, st
   }
   const variant = VALID_VARIANTS_SET.has(event.queryStringParameters?.variant ?? '') ? (event.queryStringParameters?.variant ?? 'trans') : 'trans';
   const lang = event.queryStringParameters?.lang ?? 'en';
+  const refresh = ['1', 'true', 'yes'].includes((event.queryStringParameters?.refresh ?? '').toLowerCase())
+    || ['1', 'true', 'yes'].includes((event.queryStringParameters?.force ?? '').toLowerCase())
+    || ['1', 'true', 'yes'].includes((event.queryStringParameters?.bypassCache ?? '').toLowerCase());
   const ctx = { request: {} };
   try {
-    const result = await listFeedDigest(ctx as any, { variant, lang });
+    const result = await listFeedDigest(ctx as any, { variant, lang, refresh });
     if (fallbackCache2.size > 50) fallbackCache2.clear();
     fallbackCache2.set(`${variant}:${lang}`, { data: result, ts: Date.now() });
     return {
@@ -938,19 +965,164 @@ const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
   'Independent Trans': 'independent.co.uk',
 };
 
-function extractBiasDomain(url: string, sourceName?: string): string | null {
-  // Try source name map first (handles Google News redirects)
-  if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
-    return BIAS_SOURCE_NAME_MAP[sourceName];
-  }
-  // Fall back to URL parsing
+function isGoogleNewsUrlForDisplay(url: string): boolean {
   try {
-    const h = new URL(url).hostname.replace(/^www\./, '');
+    const h = new URL(url).hostname.toLowerCase().replace(/^www\./, '').replace(/^amp\./, '').replace(/^m\./, '');
+    return h === 'news.google.com' || h.endsWith('.google.com');
+  } catch {
+    return false;
+  }
+}
+
+function extractPublisherSuffixForDisplay(title: string): string | null {
+  // Google News RSS titles commonly look like:
+  //   "Story headline - Publisher Name"
+  const match = title.match(/\s[-–—]\s([^—–-]{2,100})\s*$/);
+  if (!match) return null;
+
+  const publisher = match[1].trim();
+
+  if (!publisher) return null;
+  if (/^https?:\/\//i.test(publisher)) return null;
+  if (publisher.length < 2 || publisher.length > 100) return null;
+
+  return publisher;
+}
+
+function cleanGoogleNewsTitleForDisplay(title: string): string {
+  return title.replace(/\s[-–—]\s([^—–-]{2,100})\s*$/, '').trim();
+}
+
+function inferDigestDisplaySource(feedSource: string, link: string, title: string): string {
+  if (!isGoogleNewsUrlForDisplay(link)) return feedSource;
+
+  const publisher = extractPublisherSuffixForDisplay(title);
+  return publisher ?? feedSource;
+}
+
+function normaliseBiasHost(hostname: string): string {
+  return hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/^amp\./, '')
+    .replace(/^m\./, '');
+}
+
+function extractBiasDomainFromUrl(url: string): string | null {
+  try {
+    const h = normaliseBiasHost(new URL(url).hostname);
+
+    // Google News URLs are redirect/aggregator URLs, not the real publisher.
+    // Do not attribute those directly to news.google.com.
+    if (h === 'news.google.com' || h.endsWith('.google.com')) {
+      return null;
+    }
+
     for (const k of BIAS_SOURCE_REGISTRY) {
       if (h === k || h.endsWith('.' + k)) return k;
     }
+
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
+}
+
+function extractPublisherSuffix(title: string): string | null {
+  const m = title.match(/\s+-\s+(.{2,100})\s*$/);
+  return m?.[1]?.trim() ?? null;
+}
+
+const BIAS_TITLE_PUBLISHER_MAP: Record<string, string> = {
+  'BBC': 'bbc.co.uk',
+  'BBC News': 'bbc.co.uk',
+  'Reuters': 'reuters.com',
+  'The Guardian': 'theguardian.com',
+  'The Independent': 'independent.co.uk',
+  'The Telegraph': 'telegraph.co.uk',
+  'The Times': 'thetimes.co.uk',
+  'Daily Mail': 'dailymail.co.uk',
+  'The Sun': 'thesun.co.uk',
+  'PinkNews': 'pinknews.co.uk',
+  'PinkNews | Latest lesbian, gay, bi and trans news': 'pinknews.co.uk',
+  'Advocate.com': 'advocate.com',
+  'The Advocate': 'advocate.com',
+  'GLAAD': 'glaad.org',
+  'GLAD Law': 'glad.org',
+  'Good Law Project': 'goodlawproject.org',
+  'NDTV': 'ndtv.com',
+  'STAT': 'statnews.com',
+  'STAT News': 'statnews.com',
+  'The Boston Globe': 'bostonglobe.com',
+  'The Week': 'theweek.com',
+  'Catholic World Report': 'catholicworldreport.com',
+  'National Review': 'nationalreview.com',
+  'The Washington Post': 'washingtonpost.com',
+  'The Olympian': 'theolympian.com',
+  'The Washington Stand': 'washingtonstand.com',
+  'CBN': 'cbn.com',
+  'cbn.com': 'cbn.com',
+  'AOL.com': 'aol.com',
+  'aberdareonline.co.uk': 'aberdareonline.co.uk',
+  'Idaho News 6': 'idahonews6.com',
+  'KBOI': 'idahonews.com',
+  'The Spokesman-Review': 'spokesman.com',
+  'The Salt Lake Tribune': 'sltrib.com',
+  'TheGrio': 'thegrio.com',
+  'UCLA': 'ucla.edu',
+  'Newsroom | UCLA': 'ucla.edu',
+  'ILGA World': 'ilga.org',
+  'The Weekly Dish | Andrew Sullivan': 'andrewsullivan.substack.com',
+  'American Kennel Club': 'akc.org',
+  'Lambda Legal': 'lambdalegal.org',
+  'donoharmmedicine.org': 'donoharmmedicine.org',
+  '毎日新聞': 'mainichi.jp',
+  'Operation Sports': 'operationsports.com',
+  'Channel 4': 'channel4.com',
+  'The New York Times': 'nytimes.com',
+};
+
+function isGoogleNewsUrl(url: string): boolean {
+  try {
+    const h = normaliseBiasHost(new URL(url).hostname);
+    return h === 'news.google.com' || h.endsWith('.google.com');
+  } catch {
+    return false;
+  }
+}
+
+function extractBiasDomain(url: string, sourceName?: string, title?: string): string | null {
+  // Prefer the real article URL.
+  const urlDomain = extractBiasDomainFromUrl(url);
+  if (urlDomain) return urlDomain;
+
+  // Google News URLs are aggregators. Try the publisher suffix from titles like:
+  // "Some headline - BBC" or "Some headline - Reuters".
+  if (title && isGoogleNewsUrl(url)) {
+    const publisher = extractPublisherSuffix(title);
+    if (publisher && BIAS_TITLE_PUBLISHER_MAP[publisher]) {
+      return BIAS_TITLE_PUBLISHER_MAP[publisher];
+    }
+
+    console.log('[media-bias] unresolved-google-news-publisher', {
+      source: sourceName ?? null,
+      title,
+      publisherSuffix: publisher,
+      link: url,
+      aliasDomain: sourceName ? BIAS_SOURCE_NAME_MAP[sourceName] ?? null : null,
+    });
+
+    // Do not fall back to the configured source bucket for unresolved Google News.
+    // That causes false attribution, e.g. The Times bucket -> GLAD Law/BBC article.
+    return null;
+  }
+
+  // Last resort for direct feeds with known source names.
+  if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
+    return BIAS_SOURCE_NAME_MAP[sourceName];
+  }
+
+  return null;
 }
 
 function biasScoreToLabel(score: number): string {
@@ -969,8 +1141,15 @@ function simpleHash(s: string): string {
 
 async function scoreAndIngestBias(item: { link: string; title: string; source: string; publishedAt: number }): Promise<void> {
   const url = item.link ?? '';
-  const domain = extractBiasDomain(url, item.source);
+  const domain = extractBiasDomain(url, item.source, item.title);
   if (!domain) {
+    console.log('[media-bias] skip no-domain', {
+      source: item.source,
+      title: item.title,
+      link: url,
+      urlDomain: extractBiasDomainFromUrl(url),
+      aliasDomain: BIAS_SOURCE_NAME_MAP[item.source] ?? null,
+    });
     return;
   }
   // Skip empty/placeholder titles — just the source name or too short to score meaningfully

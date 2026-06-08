@@ -46,8 +46,10 @@ locals {
   })
 
   news_digest_env = merge(local.common_env, {
-    PUSHOVER_TOKEN = var.pushover_token
-    PUSHOVER_USER  = var.pushover_user
+    PUSHOVER_TOKEN          = var.pushover_token
+    PUSHOVER_USER           = var.pushover_user
+    BIAS_SCORING_BUDGET_MS  = "3500"
+    BIAS_MAX_PER_CATEGORY   = "1"
   })
 
   vpc_config = {
