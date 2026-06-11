@@ -188,10 +188,6 @@ export default {
         return cleanResponse;
       }
 
-      if (url.pathname.startsWith("/api/news/") || url.pathname.startsWith("/api/media/")) {
-        cleanResponse.headers.set("cache-control", "public, max-age=300, stale-while-revalidate=60");
-        return cleanResponse;
-      }
 
       return cleanResponse;
     }
