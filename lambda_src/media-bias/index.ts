@@ -53,6 +53,17 @@ export const SOURCE_REGISTRY: Record<string, { name: string; domain: string; edi
   'translash.org':        { name: 'TransLash',           domain: 'translash.org',        editorialBias: 'supportive' },
   'erininthemorning.com': { name: 'Erin in the Morning', domain: 'erininthemorning.com', editorialBias: 'supportive' },
   'assignedmedia.org':    { name: 'Assigned Media',      domain: 'assignedmedia.org',    editorialBias: 'supportive' },
+  // International press
+  'reuters.com':              { name: 'Reuters',              domain: 'reuters.com',              editorialBias: 'neutral' },
+  'washingtonpost.com':       { name: 'Washington Post',      domain: 'washingtonpost.com',       editorialBias: 'neutral' },
+  'nytimes.com':              { name: 'New York Times',        domain: 'nytimes.com',              editorialBias: 'neutral' },
+  'advocate.com':             { name: 'The Advocate',          domain: 'advocate.com',             editorialBias: 'positive' },
+  'ndtv.com':                 { name: 'NDTV',                  domain: 'ndtv.com',                 editorialBias: 'neutral' },
+  'andrewsullivan.substack.com': { name: 'Andrew Sullivan',   domain: 'andrewsullivan.substack.com', editorialBias: 'hostile' },
+  // Legal/advocacy
+  'goodlawproject.org':       { name: 'Good Law Project',      domain: 'goodlawproject.org',       editorialBias: 'positive' },
+  'lambdalegal.org':          { name: 'Lambda Legal',          domain: 'lambdalegal.org',          editorialBias: 'supportive' },
+  'ilga.org':                 { name: 'ILGA World',            domain: 'ilga.org',                 editorialBias: 'supportive' },
   // Advocacy organisations — supportive
   'transactual.org.uk':   { name: 'TransActual',         domain: 'transactual.org.uk',   editorialBias: 'supportive' },
   'stonewall.org.uk':     { name: 'Stonewall',           domain: 'stonewall.org.uk',     editorialBias: 'supportive' },
