@@ -57,6 +57,8 @@ const SCORE_WEIGHTS = {
 interface ParsedItem {
   source: string;
   title: string;
+  summary?: string;
+  scanAllWithBedrock?: boolean;
   link: string;
   publishedAt: number;
   isAlert: boolean;
@@ -85,6 +87,83 @@ function extractStoryKey(title: string): string {
   // of the same story share the same key if they share enough vocabulary.
   // Take up to 8 words sorted alphabetically so the key is deterministic.
   return [...words].sort().slice(0, 8).join(' ');
+}
+
+const LIVE_FEED_MAX_AGE_MS = 45 * 24 * 60 * 60 * 1000;
+const FUTURE_SKEW_MS = 6 * 60 * 60 * 1000;
+
+function isBackfillSource(source: string): boolean {
+  return /\bbackfill\b/i.test(source);
+}
+
+function normaliseDedupeText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+[-–—]\s+[^-–—|]+$/g, '')
+    .replace(/\([^)]*(exclusive|video|watch)[^)]*\)/gi, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function liveItemDedupeKey(item: ParsedItem): string {
+  const link = String(item.link ?? '').trim().toLowerCase();
+
+  // Google News RSS links can repeat the same underlying item under different
+  // feed/source names, so title is the safer primary key for those.
+  if (link.includes('news.google.com/rss/articles/')) {
+    return `title:${normaliseDedupeText(item.title)}`;
+  }
+
+  return link
+    ? `link:${link}`
+    : `title:${normaliseDedupeText(item.title)}`;
+}
+
+function cleanLiveDigestItems(items: ParsedItem[]): ParsedItem[] {
+  const now = Date.now();
+  const seen = new Set<string>();
+
+  return items
+    .filter((item) => {
+      if (isBackfillSource(item.source)) return false;
+
+      const publishedAt = Number(item.publishedAt);
+      if (!Number.isFinite(publishedAt) || publishedAt <= 0) return false;
+      if (publishedAt > now + FUTURE_SKEW_MS) return false;
+      if (publishedAt < now - LIVE_FEED_MAX_AGE_MS) return false;
+
+      return true;
+    })
+    .filter((item) => {
+      const key = liveItemDedupeKey(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+const HERO_CATEGORY_PRIORITY: Record<string, number> = {
+  healthcare: 12,
+  legal: 11,
+  "uk-press": 10,
+  mainstream: 9,
+  international: 8,
+  safety: 3,
+  community: 2,
+  wins: 1,
+};
+
+function heroScore(item: any, category: string): number {
+  const base = Number(item.importanceScore ?? 0);
+  const priority = HERO_CATEGORY_PRIORITY[category] ?? 0;
+
+  // Do not let low/medium safety stories dominate the digest hero.
+  if (category === "safety" && base < 35) return base - 20;
+
+  return base + priority;
 }
 
 function computeImportanceScore(
@@ -202,6 +281,13 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
     const title = extractTag(block, 'title');
     if (!title) continue;
 
+    const summary = (
+      extractTag(block, 'description') ||
+      extractTag(block, 'summary') ||
+      extractTag(block, 'content:encoded') ||
+      ''
+    ).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1000);
+
     let link: string;
     if (isAtom) {
       const hrefMatch = block.match(/<link[^>]+href=["']([^"']+)["']/);
@@ -224,6 +310,7 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
     items.push({
       source: inferDigestDisplaySource(feed.name, link, title),
       title: isGoogleNewsUrlForDisplay(link) ? cleanGoogleNewsTitleForDisplay(title) : title,
+      summary,
       link,
       publishedAt,
       isAlert,
@@ -231,6 +318,7 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
       category: threat.category,
       confidence: threat.confidence,
       classSource: 'keyword',
+      scanAllWithBedrock: feed.scanAllWithBedrock === true,
       importanceScore: 0,
       corroborationCount: 1,
       lang: feed.lang ?? 'en',
@@ -241,7 +329,7 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParsedItem
 }
 
 const TAG_REGEX_CACHE = new Map<string, { cdata: RegExp; plain: RegExp }>();
-const KNOWN_TAGS = ['title', 'link', 'pubDate', 'published', 'updated'] as const;
+const KNOWN_TAGS = ['title', 'link', 'pubDate', 'published', 'updated', 'description', 'summary', 'content:encoded'] as const;
 for (const tag of KNOWN_TAGS) {
   TAG_REGEX_CACHE.set(tag, {
     // Safer regexes with specific character classes to avoid catastrophic backtracking.
@@ -553,7 +641,64 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
     }
 
     // Flatten ALL items before any truncation so cross-category corroboration is counted.
-    const allItems = [...results.values()].flat();
+    let allItems = [...results.values()].flat();
+
+    // Direct general RSS feeds can contain relevant articles whose titles do not
+    // include obvious trans keywords. For feeds marked scanAllWithBedrock, run an
+    // early Bedrock/Ollama relevance pass before clustering/slicing drops them.
+    if (variant === 'trans') {
+      const scanAllCandidates = allItems.filter(item =>
+        item.scanAllWithBedrock === true && !isTransRelevant(item),
+      );
+
+      if (scanAllCandidates.length > 0) {
+        const maxScanAll = Number(process.env.TRANS_RELEVANCE_SCAN_MAX ?? '80');
+        const limited = scanAllCandidates.slice(0, maxScanAll);
+
+        console.log(
+          `[digest] scan-all Bedrock relevance candidates=${scanAllCandidates.length} limited=${limited.length}`,
+        );
+
+        const aiResults = await aiFilterTransRelevant(limited).catch(err => {
+          console.warn('[digest] scan-all Bedrock relevance filter failed:', (err as Error).message);
+          return limited.map(() => false);
+        });
+
+        const aiKeep = new Set(limited.filter((_, i) => aiResults[i]));
+
+        console.log(
+          `[digest] scan-all Bedrock relevance passed=${aiKeep.size} rejected=${limited.length - aiKeep.size}`,
+        );
+
+        // Promote Bedrock-approved scan-all items before importance scoring.
+        // Otherwise general-RSS articles can survive relevance filtering but still
+        // lose the category slice because their original keyword classification was weak.
+        for (const item of aiKeep) {
+          item.classSource = 'llm';
+          item.confidence = Math.max(item.confidence, 0.9);
+          if (item.level === 'info' || item.level === 'low') {
+            item.level = 'medium';
+            item.isAlert = false;
+          }
+          if (!item.category || item.category === 'general') {
+            item.category = 'trans';
+          }
+        }
+
+        for (const [category, items] of results) {
+          results.set(
+            category,
+            items.filter(item =>
+              item.scanAllWithBedrock !== true ||
+              isTransRelevant(item) ||
+              aiKeep.has(item),
+            ),
+          );
+        }
+
+        allItems = [...results.values()].flat();
+      }
+    }
 
     // Compute sha256 title hashes and build corroboration map in one pass.
     // Hashes are stored on each item for reuse as Redis story-tracking keys.
@@ -660,7 +805,9 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
         b.importanceScore - a.importanceScore || b.publishedAt - a.publishedAt,
       );
       // Filter to only winning items (highest-scoring per story key cluster)
-      const dedupedItems = items.filter(item => winningHashes.has(item.titleHash!));
+      const dedupedItems = cleanLiveDigestItems(
+        items.filter(item => winningHashes.has(item.titleHash!))
+      );
       slicedByCategory.set(category, dedupedItems.slice(0, MAX_ITEMS_PER_CATEGORY));
     }
 
@@ -702,11 +849,87 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
       console.warn('[digest] story tracking write failed:', err),
     );
 
+    const biasScoringBudgetMs = Number(process.env.BIAS_SCORING_BUDGET_MS ?? '8000');
+    const biasMaxPerCategory = Number(process.env.BIAS_MAX_PER_CATEGORY ?? '3');
+    let biasGlobalDeadline: number | null = null;
+
+    // Score direct RSS media-bias targets before category slicing/filtering can drop them.
+    // This is specifically for sources like Attitude, DIVA, Vice, Daily Mail, Express and The i.
+    const seenGlobalBiasDomains = new Set<string>();
+    const directBiasTargets = allItems
+      .filter(item => item.link && (item.scanAllWithBedrock === true || isGoogleNewsUrl(item.link)) && canResolveBiasDomain(item))
+      .filter(item => isTransRelevant({ title: `${item.title} ${item.summary ?? ''}` }))
+      .sort((a, b) => b.importanceScore - a.importanceScore || b.publishedAt - a.publishedAt)
+      .filter(item => {
+        const domain = extractBiasDomain(item.link, item.source, item.title);
+        if (!domain || seenGlobalBiasDomains.has(domain)) return false;
+        seenGlobalBiasDomains.add(domain);
+        return true;
+      });
+
+    console.log(
+      `[media-bias] global-direct targets total=${directBiasTargets.length} first=${directBiasTargets.slice(0, 10).map(i => i.source).join('|')}`,
+    );
+
+    if (directBiasTargets.length > 0) {
+      biasGlobalDeadline = Date.now() + biasScoringBudgetMs;
+      let scoredDirect = 0;
+
+      for (const item of directBiasTargets) {
+        if (scoredDirect >= biasMaxPerCategory) break;
+        if (biasGlobalDeadline !== null && Date.now() > biasGlobalDeadline) {
+          console.warn('[media-bias] global-direct budget exhausted, skipping remaining targets');
+          break;
+        }
+
+        try {
+          const domain = extractBiasDomain(item.link, item.source, item.title);
+          console.log('[media-bias] global-direct scoring start', {
+            source: item.source,
+            domain,
+            title: item.title,
+          });
+
+          let timedOut = false;
+          await Promise.race([
+            scoreAndIngestBias(item),
+            new Promise<void>(resolve => setTimeout(() => {
+              timedOut = true;
+              resolve();
+            }, 4000)),
+          ]);
+
+          if (timedOut) {
+            console.warn('[media-bias] global-direct scoring timed out', {
+              source: item.source,
+              domain,
+              title: item.title,
+            });
+          } else {
+            console.log('[media-bias] global-direct scoring finished', {
+              source: item.source,
+              domain,
+              title: item.title,
+            });
+          }
+        } catch (err) {
+          console.warn('[media-bias] global-direct score/ingest failed:', (err as Error).message);
+        }
+
+        scoredDirect++;
+      }
+    }
+
+    const aiCategoryFilterBudgetMs = Number(process.env.AI_CATEGORY_FILTER_BUDGET_MS ?? '2500');
+    const aiCategoryFilterDeadline = Date.now() + aiCategoryFilterBudgetMs;
+    const aiCategoryFilterMaxItems = Number(process.env.AI_CATEGORY_FILTER_MAX_ITEMS ?? '8');
+
     for (const [category, sliced] of slicedByCategory) {
       // trans variant: filter noisy categories to trans-relevant items only.
       // Two-pass hybrid filter:
       //   1. Keyword filter (fast, zero-cost) — keep clear hits
-      //   2. AI filter via Ollama (semantic) — rescue keyword-missed items
+      //   2. AI filter via Ollama/Bedrock (semantic) — rescue keyword-missed items
+      //      but only within a small time/item budget so the digest can still return.
       // Applied to: community (broad LGBTQ+ RSS), legal (broad keyword queries),
       //             mainstream (general news outlets)
       const TRANS_FILTERED_CATEGORIES = new Set(['community', 'legal', 'mainstream', 'safety', 'international', 'uk-press', 'wins']);
@@ -715,27 +938,58 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
         const keywordPassed = sliced.filter(item => isTransRelevant(item));
         const keywordFailed = sliced.filter(item => !isTransRelevant(item));
         let aiPassed: typeof sliced = [];
-        if (keywordFailed.length > 0) {
-          const aiResults = await aiFilterTransRelevant(keywordFailed).catch(err => {
+
+        if (keywordFailed.length > 0 && Date.now() < aiCategoryFilterDeadline) {
+          const limitedKeywordFailed = keywordFailed.slice(0, aiCategoryFilterMaxItems);
+
+          const aiResults = await aiFilterTransRelevant(limitedKeywordFailed).catch(err => {
             console.warn('[digest] ai filter error, dropping failed items:', (err as Error).message);
-            return keywordFailed.map(() => false);
+            return limitedKeywordFailed.map(() => false);
           });
-          aiPassed = keywordFailed.filter((_, i) => aiResults[i]);
+
+          aiPassed = limitedKeywordFailed.filter((_, i) => aiResults[i]);
+        } else if (keywordFailed.length > 0) {
+          console.warn('[digest] skipping category AI rescue due to time budget', {
+            category,
+            keywordFailed: keywordFailed.length,
+          });
         }
+
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
       // Bias scoring — deadline-aware and sequential.
       // This endpoint is an API Lambda with a 30s timeout. Do not fan out Bedrock/Redis
       // work across every category; score a small number of targets and return safely.
-      const biasTargets = filteredSliced.filter(item => item.link);
-      const biasScoringBudgetMs = Number(process.env.BIAS_SCORING_BUDGET_MS ?? '8000');
-      const biasMaxPerCategory = Number(process.env.BIAS_MAX_PER_CATEGORY ?? '3');
-      const biasDeadline = now + biasScoringBudgetMs;
+      const biasTargets = filteredSliced
+        // Temporarily prioritise direct RSS items only, so media-bias backfill
+        // fills Attitude/DIVA/Vice/Mail/Express/iNews instead of spending budget
+        // on older Google News/backfill items.
+        .filter(item => item.link && (item.scanAllWithBedrock === true || isGoogleNewsUrl(item.link)) && canResolveBiasDomain(item))
+        .sort((a, b) => {
+          const aScanAll = a.scanAllWithBedrock === true ? 1 : 0;
+          const bScanAll = b.scanAllWithBedrock === true ? 1 : 0;
+          return bScanAll - aScanAll || b.importanceScore - a.importanceScore || b.publishedAt - a.publishedAt;
+        });
+      if (biasTargets.length > 0 && biasGlobalDeadline === null) {
+        biasGlobalDeadline = Date.now() + biasScoringBudgetMs;
+      }
+
+      console.log(
+        `[media-bias] targets category=${category} total=${filteredSliced.length} resolvable=${biasTargets.length} first=${biasTargets.slice(0, 5).map(i => i.source).join('|')}`,
+      );
+
+      const seenBiasDomains = new Set<string>();
+      const dedupedBiasTargets = biasTargets.filter(item => {
+        const domain = extractBiasDomain(item.link, item.source, item.title);
+        if (!domain || seenBiasDomains.has(domain)) return false;
+        seenBiasDomains.add(domain);
+        return true;
+      });
 
       let scoredThisCategory = 0;
-      for (const item of biasTargets) {
+      for (const item of dedupedBiasTargets) {
         if (scoredThisCategory >= biasMaxPerCategory) break;
-        if (Date.now() > biasDeadline) {
+        if (biasGlobalDeadline !== null && Date.now() > biasGlobalDeadline) {
           console.warn('[media-bias] budget exhausted, skipping remaining targets');
           break;
         }
@@ -743,7 +997,7 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
         try {
           await Promise.race([
             scoreAndIngestBias(item),
-            new Promise<void>(resolve => setTimeout(resolve, 1500)),
+            new Promise<void>(resolve => setTimeout(resolve, 4000)),
           ]);
         } catch (err) {
           console.warn('[media-bias] score/ingest failed:', (err as Error).message);
@@ -779,7 +1033,30 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
       };
     }
 
+    console.log('[digest] finished category loop, building hero/response');
+
+    const hero = [...slicedByCategory.entries()]
+      .flatMap(([category, items]) => items.map(item => ({ item, category })))
+      .map(({ item, category }) => ({ item, category, score: heroScore(item, category) }))
+      .sort((a, b) =>
+        b.score - a.score ||
+        Number(b.item.publishedAt ?? 0) - Number(a.item.publishedAt ?? 0)
+      )[0];
+
     return {
+      hero: hero ? toProtoItem(hero.item, {
+        firstSeen: storyTracks.get(hero.item.titleHash!)?.firstSeen ?? now,
+        mentionCount: (storyTracks.get(hero.item.titleHash!)?.mentionCount ?? 0) + 1,
+        sourceCount: corroborationMap.get(hero.item.titleHash!)?.size ?? 1,
+        phase: derivePhase({
+          firstSeen: storyTracks.get(hero.item.titleHash!)?.firstSeen ?? now,
+          lastSeen: now,
+          mentionCount: (storyTracks.get(hero.item.titleHash!)?.mentionCount ?? 0) + 1,
+          sourceCount: corroborationMap.get(hero.item.titleHash!)?.size ?? 1,
+          currentScore: storyTracks.get(hero.item.titleHash!)?.currentScore ?? 0,
+          peakScore: storyTracks.get(hero.item.titleHash!)?.peakScore ?? 0,
+        }),
+      }) : undefined,
       categories,
       feedStatuses,
       generatedAt: new Date().toISOString(),
@@ -936,6 +1213,9 @@ const BIAS_SOURCE_NAME_MAP: Record<string, string> = {
   'Assigned Media Search': 'assignedmedia.org',
   'Attitude Search': 'attitude.co.uk',
   'DIVA Magazine Search': 'divamag.co.uk',
+  'DIVA Magazine': 'divamag.co.uk',
+  'Attitude': 'attitude.co.uk',
+  'Vice UK': 'vice.com',
   'Erin Search': 'erininthemorning.com',
   'Erin in the Morning': 'erininthemorning.com',
   'GATE Search': 'gate.ngo',
@@ -1001,11 +1281,15 @@ function inferDigestDisplaySource(feedSource: string, link: string, title: strin
 }
 
 function normaliseBiasHost(hostname: string): string {
-  return hostname
+  const h = hostname
     .toLowerCase()
     .replace(/^www\./, '')
     .replace(/^amp\./, '')
     .replace(/^m\./, '');
+
+  if (h === 'diva-magazine.com') return 'divamag.co.uk';
+
+  return h;
 }
 
 function extractBiasDomainFromUrl(url: string): string | null {
@@ -1080,6 +1364,27 @@ const BIAS_TITLE_PUBLISHER_MAP: Record<string, string> = {
   'Operation Sports': 'operationsports.com',
   'Channel 4': 'channel4.com',
   'The New York Times': 'nytimes.com',
+  // UK press — added for Google News resolution
+  'GB News': 'gbnews.com',
+  'Sky News': 'sky.com',
+  'ITV News': 'itv.com',
+  'ITV': 'itv.com',
+  'The Mirror': 'mirror.co.uk',
+  'Daily Mirror': 'mirror.co.uk',
+  'The Spectator': 'spectator.co.uk',
+  'Daily Express': 'express.co.uk',
+  'Express': 'express.co.uk',
+  'TalkTV': 'talk.tv',
+  'Talk TV': 'talk.tv',
+  'Metro': 'metro.co.uk',
+  'Metro.co.uk': 'metro.co.uk',
+  'HuffPost UK': 'huffingtonpost.co.uk',
+  'HuffPost': 'huffingtonpost.co.uk',
+  'Vice': 'vice.com',
+  'Vice UK': 'vice.com',
+  'i news': 'inews.co.uk',
+  'inews': 'inews.co.uk',
+  'The i': 'inews.co.uk',
 };
 
 function isGoogleNewsUrl(url: string): boolean {
@@ -1104,16 +1409,19 @@ function extractBiasDomain(url: string, sourceName?: string, title?: string): st
       return BIAS_TITLE_PUBLISHER_MAP[publisher];
     }
 
+    // Title suffix failed — try the RSS <source> element via known maps
+    if (sourceName && BIAS_TITLE_PUBLISHER_MAP[sourceName]) {
+      return BIAS_TITLE_PUBLISHER_MAP[sourceName];
+    }
+    if (sourceName && BIAS_SOURCE_NAME_MAP[sourceName]) {
+      return BIAS_SOURCE_NAME_MAP[sourceName];
+    }
     console.log('[media-bias] unresolved-google-news-publisher', {
       source: sourceName ?? null,
       title,
       publisherSuffix: publisher,
       link: url,
-      aliasDomain: sourceName ? BIAS_SOURCE_NAME_MAP[sourceName] ?? null : null,
     });
-
-    // Do not fall back to the configured source bucket for unresolved Google News.
-    // That causes false attribution, e.g. The Times bucket -> GLAD Law/BBC article.
     return null;
   }
 
@@ -1123,6 +1431,25 @@ function extractBiasDomain(url: string, sourceName?: string, title?: string): st
   }
 
   return null;
+}
+
+function canResolveBiasDomain(item: { link: string; title: string; source: string }): boolean {
+  const urlDomain = extractBiasDomainFromUrl(item.link);
+  if (urlDomain) return true;
+
+  // Google News URLs are only safe if we can extract a real publisher suffix.
+  // Do not use source-name fallback for Google News, because it can misattribute
+  // articles from one outlet into another configured bucket.
+  if (isGoogleNewsUrl(item.link)) {
+    const publisher = extractPublisherSuffix(item.title);
+    if (publisher && BIAS_TITLE_PUBLISHER_MAP[publisher]) return true;
+    // Fall back to RSS <source> element for Google News items
+    if (BIAS_TITLE_PUBLISHER_MAP[item.source]) return true;
+    if (BIAS_SOURCE_NAME_MAP[item.source]) return true;
+    return false;
+  }
+
+  return !!BIAS_SOURCE_NAME_MAP[item.source];
 }
 
 function biasScoreToLabel(score: number): string {
@@ -1139,7 +1466,7 @@ function simpleHash(s: string): string {
   return Math.abs(h).toString(16).padStart(8, '0');
 }
 
-async function scoreAndIngestBias(item: { link: string; title: string; source: string; publishedAt: number }): Promise<void> {
+async function scoreAndIngestBias(item: { link: string; title: string; source: string; publishedAt: number; summary?: string; scanAllWithBedrock?: boolean }): Promise<void> {
   const url = item.link ?? '';
   const domain = extractBiasDomain(url, item.source, item.title);
   if (!domain) {
@@ -1164,12 +1491,21 @@ async function scoreAndIngestBias(item: { link: string; title: string; source: s
   if (/^-\s*$/.test(titleClean)) return;
 
   const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) return;
+  if (!redisUrl) {
+    console.warn('[media-bias] skip no-redis-url', { domain, source: item.source, title: item.title });
+    return;
+  }
 
   try {
     // Score via Bedrock
     const bedrock = new BedrockRuntimeClient({ region: 'eu-west-1' });
     const editorialStance = BIAS_EDITORIAL[domain] ?? 'neutral';
+    const text = [
+      `Source: ${item.source}`,
+      `Title: ${item.title}`,
+      item.summary ? `Summary: ${item.summary}` : '',
+    ].filter(Boolean).join('\n');
+
     const prompt = `You are a media bias analyst specialising in UK trans rights coverage.
 
 STEP 1 — Relevance:
@@ -1193,7 +1529,7 @@ A hostile outlet publishing a positive story should score lower if the broader f
 61-80 = positive   (inclusive language, trans voices quoted, affirming framing)
 81-100 = supportive (trans-led perspective, advocacy-adjacent, explicitly affirmative)
 
-Title: ${item.title}
+${text}
 
 Respond ONLY with valid JSON, no markdown:
 {"relevant": true|false, "score": <integer 0-100 if relevant else null>, "reason": "<one sentence max 20 words>"}`;
@@ -1251,12 +1587,25 @@ Respond ONLY with valid JSON, no markdown:
 
     // Skip if Bedrock flagged article as not trans-related
     if (parsed.relevant === false) {
+      console.log('[media-bias] skip irrelevant', {
+        domain,
+        source: item.source,
+        title: item.title,
+        summaryLen: item.summary?.length ?? 0,
+        parsed,
+      });
       await redis.disconnect();
       return;
     }
     // Skip if already scored this article
     const alreadyScored = await redis.get(dedupKey);
     if (alreadyScored) {
+      console.log('[media-bias] skip already-scored', {
+        domain,
+        source: item.source,
+        title: item.title,
+        dedupKey,
+      });
       await redis.disconnect();
       return;
     }
@@ -1287,7 +1636,7 @@ Respond ONLY with valid JSON, no markdown:
     });
 
     await redis.sAdd('media:bias:index', domain);
-    console.log('[media-bias] wrote domain', domain, 'source', item.source, 'title', item.title);
+    console.log('[media-bias] wrote domain', domain, 'source', item.source, 'title', item.title, 'summaryLen', item.summary?.length ?? 0);
     await redis.disconnect();
 
   } catch (err) {
