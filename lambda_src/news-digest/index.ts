@@ -1,19 +1,28 @@
 
-import { cachedFetchJson, getCachedJsonBatch, runRedisPipeline } from './_redis';
-import { pushover } from './pushover';
-const markNoCacheResponse = (_req: unknown) => {};
-import { sha256Hex } from './_hash';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { createClient as createRedisClient } from 'redis';
+import { cachedFetchJson, getCachedJsonBatch, runRedisPipeline } from './_redis.js';
+import { pushover } from './pushover.js';
+import { sha256Hex } from './_hash.js';
+import { VARIANT_FEEDS, INTEL_SOURCES, type ServerFeed } from './_feeds.js';
+import { classifyByKeyword, type ThreatLevel } from './_classifier.js';
+import { getSourceTier } from './_source-tiers.js';
+import { STORY_TRACK_KEY, STORY_SOURCES_KEY, STORY_PEAK_KEY, DIGEST_ACCUMULATOR_KEY, STORY_TTL, STORY_TRACK_KEY_PREFIX, DIGEST_ACCUMULATOR_TTL } from './_cache-keys.js';
+import { isTransRelevant } from './_trans-filter.js';
+import { aiFilterTransRelevant } from './_trans-ai-filter.js';
+
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-import { VARIANT_FEEDS, INTEL_SOURCES, type ServerFeed } from './_feeds';
-import { classifyByKeyword, type ThreatLevel } from './_classifier';
-import { getSourceTier } from './_source-tiers';
-import { STORY_TRACK_KEY, STORY_SOURCES_KEY, STORY_PEAK_KEY, DIGEST_ACCUMULATOR_KEY, STORY_TTL, STORY_TRACK_KEY_PREFIX, DIGEST_ACCUMULATOR_TTL } from './_cache-keys';
+const RSS_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+const markNoCacheResponse = (_req: unknown) => {};
 const getRelayBaseUrl = () => null;
 const getRelayHeaders = (h: Record<string, string>) => h;
-
-const RSS_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
-import { isTransRelevant } from './_trans-filter';
-import { aiFilterTransRelevant } from './_trans-ai-filter';
 
 const VALID_VARIANTS = new Set(['full', 'tech', 'finance', 'happy', 'commodity', 'trans']);
 const fallbackDigestCache = new Map<string, { data: unknown; ts: number }>();
@@ -127,17 +136,17 @@ function cleanLiveDigestItems(items: ParsedItem[]): ParsedItem[] {
   const seen = new Set<string>();
 
   return items
-    .filter((item) => {
+    .filter(item => {
       if (isBackfillSource(item.source)) return false;
 
       const publishedAt = Number(item.publishedAt);
       if (!Number.isFinite(publishedAt) || publishedAt <= 0) return false;
       if (publishedAt > now + FUTURE_SKEW_MS) return false;
-      if (publishedAt < now - LIVE_FEED_MAX_AGE_MS) return false;
+      return publishedAt >= now - LIVE_FEED_MAX_AGE_MS;
 
-      return true;
+      
     })
-    .filter((item) => {
+    .filter(item => {
       const key = liveItemDedupeKey(item);
       if (!key || seen.has(key)) return false;
       seen.add(key);
@@ -183,6 +192,12 @@ function computeImportanceScore(
     corroborationScore * SCORE_WEIGHTS.corroboration +
     recencyScore * SCORE_WEIGHTS.recency,
   );
+}
+
+interface AbortSignal {
+  addEventListener(type: string, listener: () => void, options?: { once?: boolean }): void;
+  removeEventListener(type: string, listener: () => void): void;
+  readonly aborted: boolean;
 }
 
 function createTimeoutLinkedController(parentSignal: AbortSignal): {
@@ -333,7 +348,7 @@ const KNOWN_TAGS = ['title', 'link', 'pubDate', 'published', 'updated', 'descrip
 for (const tag of KNOWN_TAGS) {
   TAG_REGEX_CACHE.set(tag, {
     // Safer regexes with specific character classes to avoid catastrophic backtracking.
-    cdata: new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i'),
+    cdata: new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*</${tag}>`, 'i'),
     plain: new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`, 'i'),
   });
 }
@@ -341,7 +356,7 @@ for (const tag of KNOWN_TAGS) {
 function extractTag(xml: string, tag: string): string {
   const cached = TAG_REGEX_CACHE.get(tag);
   // Fallback to cached or new regex (though all expected tags are in cache)
-  const cdataRe = cached?.cdata ?? new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i');
+  const cdataRe = cached?.cdata ?? new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*</${tag}>`, 'i');
   const plainRe = cached?.plain ?? new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`, 'i');
 
   // Input length limit for defense-in-depth against extremely large tags
@@ -483,10 +498,17 @@ function toProtoItem(item: ParsedItem, storyMeta?: { firstSeen: number; mentionC
   };
 }
 
+interface DigestResult {
+  hero?: unknown;
+  categories: Record<string, { items: unknown[] }>;
+  feedStatuses: Record<string, string>;
+  generatedAt: string;
+}
+
 export async function listFeedDigest(
-  ctx: unknown,
+  ctx: any,
   req: { variant: string; lang: string; refresh?: boolean },
-): Promise<unknown> {
+): Promise<DigestResult> {
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : 'full';
   const lang = req.lang || 'en';
   const refresh = req.refresh === true;
@@ -494,22 +516,22 @@ export async function listFeedDigest(
   const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
   const fallbackKey = `${variant}:${lang}`;
 
-  const empty = (): unknown => ({ categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() });
+  const empty = (): DigestResult => ({ categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() });
 
   try {
     // cachedFetchJson coalesces concurrent cold-path calls: concurrent requests
     // for the same key share a single buildDigest() run instead of fanning out
     // across all RSS feeds. Returning null skips the Redis write and caches a
     // neg-sentinel (120s) to absorb the request storm during degraded periods.
-    const buildFreshDigest = async (): Promise<unknown | null> => {
-      const result = await buildDigest(variant, lang);
+    const buildFreshDigest = async (): Promise<DigestResult | null> => {
+      const result = await buildDigest(variant, lang) as DigestResult;
       const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);
       return totalItems > 0 ? result : null;
     };
 
     const fresh = refresh
       ? await buildFreshDigest()
-      : await cachedFetchJson<unknown>(
+      : await cachedFetchJson<DigestResult>(
           digestCacheKey,
           900,
           buildFreshDigest,
@@ -517,7 +539,7 @@ export async function listFeedDigest(
 
     if (fresh === null) {
       markNoCacheResponse(ctx.request);
-      return fallbackDigestCache.get(fallbackKey)?.data ?? empty();
+      return fallbackDigestCache.get(fallbackKey)?.data as DigestResult ?? empty();
     }
 
     if (fallbackDigestCache.size > 50) fallbackDigestCache.clear();
@@ -525,7 +547,7 @@ export async function listFeedDigest(
     return fresh;
   } catch {
     markNoCacheResponse(ctx.request);
-    return fallbackDigestCache.get(fallbackKey)?.data ?? empty();
+    return fallbackDigestCache.get(fallbackKey)?.data as DigestResult ?? empty();
   }
 }
 
@@ -581,7 +603,7 @@ async function writeStoryTracking(items: ParsedItem[], variant: string, lang: st
   ]);
 }
 
-async function buildDigest(variant: string, lang: string): Promise<unknown> {
+async function buildDigest(variant: string, lang: string): Promise<DigestResult> {
   const feedsByCategory = VARIANT_FEEDS[variant] ?? {};
   const feedStatuses: Record<string, string> = {};
   const categories: Record<string, { items: unknown[] }> = {};
@@ -1067,12 +1089,6 @@ async function buildDigest(variant: string, lang: string): Promise<unknown> {
 }
 
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
 const VALID_VARIANTS_SET = new Set(['full', 'tech', 'finance', 'happy', 'commodity', 'trans']);
 const fallbackCache2 = new Map<string, { data: unknown; ts: number }>();
 
@@ -1080,7 +1096,7 @@ export const handler = async (event: { queryStringParameters?: Record<string, st
   if (event.requestContext?.http?.method === 'OPTIONS') {
     return { statusCode: 204, headers: CORS_HEADERS, body: '' };
   }
-  const variant = VALID_VARIANTS_SET.has(event.queryStringParameters?.variant ?? '') ? (event.queryStringParameters?.variant ?? 'trans') : 'trans';
+  const variant = VALID_VARIANTS_SET.has(event.queryStringParameters?.variant ?? '') ? event.queryStringParameters?.variant ?? 'trans' : 'trans';
   const lang = event.queryStringParameters?.lang ?? 'en';
   const refresh = ['1', 'true', 'yes'].includes((event.queryStringParameters?.refresh ?? '').toLowerCase())
     || ['1', 'true', 'yes'].includes((event.queryStringParameters?.force ?? '').toLowerCase())
@@ -1110,15 +1126,23 @@ export const handler = async (event: { queryStringParameters?: Record<string, st
 };
 
 // ─── Media bias scoring ───────────────────────────────────────────────────────
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { createClient as createRedisClient } from 'redis';
 
 const BIAS_SOURCE_REGISTRY = new Set([
-  'dailymail.co.uk','telegraph.co.uk','thesun.co.uk','spectator.co.uk',
-  'gbnews.com','talk.tv','thetimes.co.uk','express.co.uk','theguardian.com',
-  'independent.co.uk','mirror.co.uk','inews.co.uk','bbc.co.uk','channel4.com',
-  'itv.com','sky.com','metro.co.uk','huffingtonpost.co.uk','vice.com',
-  'pinknews.co.uk','attitude.co.uk','divamag.co.uk','transactual.org.uk','stonewall.org.uk',
+  'dailymail.co.uk', 'telegraph.co.uk', 'thesun.co.uk', 'spectator.co.uk',
+  'gbnews.com', 'talk.tv', 'thetimes.co.uk', 'express.co.uk', 'theguardian.com',
+  'independent.co.uk', 'mirror.co.uk', 'inews.co.uk', 'bbc.co.uk', 'channel4.com',
+  'itv.com', 'sky.com', 'metro.co.uk', 'huffingtonpost.co.uk', 'vice.com',
+  'pinknews.co.uk', 'attitude.co.uk', 'divamag.co.uk', 'transactual.org.uk', 'stonewall.org.uk',
+  'them.us', 'transvitae.com', 'transgenderfeed.com', 'translash.org',
+  'erininthemorning.com', 'assignedmedia.org', 'transequality.org',
+  'transgenderlawcenter.org', 'glaad.org', 'tgeu.org', 'gate.ngo',
+  'reuters.com', 'advocate.com', 'statnews.com', 'bostonglobe.com', 'theweek.com',
+  'catholicworldreport.com', 'nationalreview.com', 'washingtonpost.com',
+  'theolympian.com', 'washingtonstand.com', 'cbn.com', 'aol.com',
+  'aberdareonline.co.uk', 'idahonews6.com', 'idahonews.com', 'spokesman.com',
+  'sltrib.com', 'thegrio.com', 'ucla.edu', 'ilga.org', 'andrewsullivan.substack.com',
+  'akc.org', 'lambdalegal.org', 'donoharmmedicine.org', 'mainichi.jp', 'operationsports.com',
+  'nytimes.com', 'goodlawproject.org', 'glad.org', 'ndtv.com',
 ]);
 
 const BIAS_EDITORIAL: Record<string, string> = {
@@ -1135,10 +1159,16 @@ const BIAS_EDITORIAL: Record<string, string> = {
   'pinknews.co.uk':'supportive','attitude.co.uk':'supportive','divamag.co.uk':'supportive',
   'them.us':'supportive','transvitae.com':'supportive','transgenderfeed.com':'supportive',
   'translash.org':'supportive','erininthemorning.com':'supportive','assignedmedia.org':'supportive',
+  'mainichi.jp': 'neutral',
   // Advocacy orgs
   'transactual.org.uk':'supportive','stonewall.org.uk':'supportive','transequality.org':'supportive',
   'transgenderlawcenter.org':'supportive','glaad.org':'supportive','tgeu.org':'supportive',
-  'gate.ngo':'supportive',
+  'gate.ngo':'supportive','lambdalegal.org':'supportive','goodlawproject.org':'supportive',
+  'glad.org':'supportive','ilga.org':'supportive',
+  // Other mainstream
+  'reuters.com':'neutral','apnews.com':'neutral','nytimes.com':'neutral','washingtonpost.com':'neutral',
+  'bostonglobe.com':'neutral','theweek.com':'neutral','statnews.com':'neutral',
+  'ndtv.com':'neutral',
 };
 
 const SOURCE_NAMES: Record<string, string> = {
@@ -1320,23 +1350,41 @@ function extractPublisherSuffix(title: string): string | null {
 const BIAS_TITLE_PUBLISHER_MAP: Record<string, string> = {
   'BBC': 'bbc.co.uk',
   'BBC News': 'bbc.co.uk',
+  'BBC Trans Coverage': 'bbc.co.uk',
   'Reuters': 'reuters.com',
+  'Reuters Trans Coverage': 'reuters.com',
   'The Guardian': 'theguardian.com',
+  'Guardian Trans': 'theguardian.com',
+  'Guardian Transgender': 'theguardian.com',
   'The Independent': 'independent.co.uk',
+  'Independent Trans': 'independent.co.uk',
   'The Telegraph': 'telegraph.co.uk',
+  'The Telegraph Trans': 'telegraph.co.uk',
   'The Times': 'thetimes.co.uk',
+  'The Times Trans': 'thetimes.co.uk',
+  'Times Trans': 'thetimes.co.uk',
   'Daily Mail': 'dailymail.co.uk',
+  'Daily Mail Backfill': 'dailymail.co.uk',
+  'Daily Mail Search': 'dailymail.co.uk',
+  'Mail Trans': 'dailymail.co.uk',
   'The Sun': 'thesun.co.uk',
+  'The Sun Backfill': 'thesun.co.uk',
+  'The Sun Search': 'thesun.co.uk',
   'PinkNews': 'pinknews.co.uk',
+  'Pink News': 'pinknews.co.uk',
   'PinkNews | Latest lesbian, gay, bi and trans news': 'pinknews.co.uk',
   'Advocate.com': 'advocate.com',
   'The Advocate': 'advocate.com',
+  'Puberty Blocker Rulings': 'advocate.com',
   'GLAAD': 'glaad.org',
+  'GLAAD Search': 'glaad.org',
+  'GLAAD Backfill': 'glaad.org',
   'GLAD Law': 'glad.org',
   'Good Law Project': 'goodlawproject.org',
   'NDTV': 'ndtv.com',
   'STAT': 'statnews.com',
   'STAT News': 'statnews.com',
+  'STAT News LGBTQ': 'statnews.com',
   'The Boston Globe': 'bostonglobe.com',
   'The Week': 'theweek.com',
   'Catholic World Report': 'catholicworldreport.com',
@@ -1363,8 +1411,10 @@ const BIAS_TITLE_PUBLISHER_MAP: Record<string, string> = {
   '毎日新聞': 'mainichi.jp',
   'Operation Sports': 'operationsports.com',
   'Channel 4': 'channel4.com',
+  'Channel 4 News': 'channel4.com',
+  'Channel 4 News Search': 'channel4.com',
+  'Channel 4 News Backfill': 'channel4.com',
   'The New York Times': 'nytimes.com',
-  // UK press — added for Google News resolution
   'GB News': 'gbnews.com',
   'Sky News': 'sky.com',
   'ITV News': 'itv.com',
@@ -1372,19 +1422,67 @@ const BIAS_TITLE_PUBLISHER_MAP: Record<string, string> = {
   'The Mirror': 'mirror.co.uk',
   'Daily Mirror': 'mirror.co.uk',
   'The Spectator': 'spectator.co.uk',
+  'The Spectator Backfill': 'spectator.co.uk',
+  'The Spectator Search': 'spectator.co.uk',
   'Daily Express': 'express.co.uk',
+  'Daily Express Backfill': 'express.co.uk',
+  'Daily Express Search': 'express.co.uk',
   'Express': 'express.co.uk',
   'TalkTV': 'talk.tv',
   'Talk TV': 'talk.tv',
+  'TalkTV Backfill': 'talk.tv',
+  'TalkTV Search': 'talk.tv',
   'Metro': 'metro.co.uk',
   'Metro.co.uk': 'metro.co.uk',
+  'Metro Trans': 'metro.co.uk',
   'HuffPost UK': 'huffingtonpost.co.uk',
+  'HuffPost UK Search': 'huffingtonpost.co.uk',
+  'HuffPost UK Backfill': 'huffingtonpost.co.uk',
   'HuffPost': 'huffingtonpost.co.uk',
   'Vice': 'vice.com',
   'Vice UK': 'vice.com',
+  'Vice UK Search': 'vice.com',
+  'Vice UK Backfill': 'vice.com',
   'i news': 'inews.co.uk',
   'inews': 'inews.co.uk',
   'The i': 'inews.co.uk',
+  'The i Search': 'inews.co.uk',
+  'The i Backfill': 'inews.co.uk',
+  'Them': 'them.us',
+  'TransVitae': 'transvitae.com',
+  'Transgender Feed': 'transgenderfeed.com',
+  'TransLash': 'translash.org',
+  'TransLash Search': 'translash.org',
+  'TransLash Backfill': 'translash.org',
+  'Assigned Media': 'assignedmedia.org',
+  'Assigned Media Search': 'assignedmedia.org',
+  'Assigned Media Backfill': 'assignedmedia.org',
+  'Attitude': 'attitude.co.uk',
+  'Attitude Search': 'attitude.co.uk',
+  'Attitude Backfill': 'attitude.co.uk',
+  'DIVA Magazine': 'divamag.co.uk',
+  'DIVA Magazine Search': 'divamag.co.uk',
+  'DIVA Magazine Backfill': 'divamag.co.uk',
+  'Erin in the Morning': 'erininthemorning.com',
+  'Erin Search': 'erininthemorning.com',
+  'Erin Backfill': 'erininthemorning.com',
+  'GATE Global': 'gate.ngo',
+  'GATE Search': 'gate.ngo',
+  'GATE Backfill': 'gate.ngo',
+  'Stonewall': 'stonewall.org.uk',
+  'Stonewall Search': 'stonewall.org.uk',
+  'Stonewall Backfill': 'stonewall.org.uk',
+  'Trans Equality': 'transequality.org',
+  'Trans Equality Search': 'transequality.org',
+  'Trans Equality Backfill': 'transequality.org',
+  'Trans Law Center': 'transgenderlawcenter.org',
+  'Trans Law Center Search': 'transgenderlawcenter.org',
+  'Trans Law Center Backfill': 'transgenderlawcenter.org',
+  'TransActual': 'transactual.org.uk',
+  'TransActual UK': 'transactual.org.uk',
+  'TransActual Search': 'transactual.org.uk',
+  'TransActual Backfill': 'transactual.org.uk',
+  'TGEU News': 'tgeu.org',
 };
 
 function isGoogleNewsUrl(url: string): boolean {
@@ -1445,8 +1543,8 @@ function canResolveBiasDomain(item: { link: string; title: string; source: strin
     if (publisher && BIAS_TITLE_PUBLISHER_MAP[publisher]) return true;
     // Fall back to RSS <source> element for Google News items
     if (BIAS_TITLE_PUBLISHER_MAP[item.source]) return true;
-    if (BIAS_SOURCE_NAME_MAP[item.source]) return true;
-    return false;
+    return !!BIAS_SOURCE_NAME_MAP[item.source];
+    
   }
 
   return !!BIAS_SOURCE_NAME_MAP[item.source];
@@ -1462,7 +1560,7 @@ function biasScoreToLabel(score: number): string {
 
 function simpleHash(s: string): string {
   let h = 0;
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0;
   return Math.abs(h).toString(16).padStart(8, '0');
 }
 
@@ -1549,95 +1647,104 @@ Respond ONLY with valid JSON, no markdown:
     ]);
 
     const raw = JSON.parse(new TextDecoder().decode((bedrockResult as any).body));
-    const rawText = (raw.content?.[0]?.text ?? '').trim().replace(/^```json\s*/,'').replace(/```\s*$/,'').trim();
+    const rawText = (raw.content?.[0]?.text ?? '').trim().replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
+    if (!rawText) {
+      throw new Error('empty_bedrock_response');
+    }
     const parsed = JSON.parse(rawText);
-    const score = Math.max(0, Math.min(100, Math.round(parsed.score)));
+    const score = parsed.relevant ? Math.max(0, Math.min(100, Math.round(parsed.score ?? 50))) : 0;
     const label = biasScoreToLabel(score);
     const reason = parsed.reason ?? '';
 
     // Ingest into Redis
     const redis = createRedisClient({ url: redisUrl });
-    await redis.connect();
+    try {
+      await redis.connect();
 
-    // Submit to Internet Archive — fire request but don't block on response
-    fetch(`https://web.archive.org/save/${encodeURIComponent(url)}`, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(3000),
-    }).catch(() => {});
+      // Submit to Internet Archive — fire request but don't block on response
+      if (typeof fetch !== 'undefined') {
+        fetch(`https://web.archive.org/save/${encodeURIComponent(url)}`, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: (AbortSignal as any).timeout?.(3000) ?? null,
+        }).catch(() => {});
+      }
 
-    const archiveUrl = `https://web.archive.org/web/*/${url}`;
+      const archiveUrl = `https://web.archive.org/web/*/${url}`;
 
-    const record = JSON.stringify({
-      id: simpleHash(url),
-      url,
-      archiveUrl,
-      title: item.title,
-      publishedAt: new Date(item.publishedAt).toISOString(),
-      domain,
-      score,
-      label,
-      reason,
-      scoredAt: new Date().toISOString(),
-    });
-
-    const articlesKey = `media:source:${domain}:articles`;
-    const metaKey     = `media:source:${domain}:meta`;
-    const dedupKey    = `media:dedup:${simpleHash(url)}`;
-
-    // Skip if Bedrock flagged article as not trans-related
-    if (parsed.relevant === false) {
-      console.log('[media-bias] skip irrelevant', {
-        domain,
-        source: item.source,
+      const record = JSON.stringify({
+        id: simpleHash(url),
+        url,
+        archiveUrl,
         title: item.title,
-        summaryLen: item.summary?.length ?? 0,
-        parsed,
-      });
-      await redis.disconnect();
-      return;
-    }
-    // Skip if already scored this article
-    const alreadyScored = await redis.get(dedupKey);
-    if (alreadyScored) {
-      console.log('[media-bias] skip already-scored', {
+        publishedAt: new Date(item.publishedAt).toISOString(),
         domain,
-        source: item.source,
-        title: item.title,
-        dedupKey,
+        score,
+        label,
+        reason,
+        scoredAt: new Date().toISOString(),
       });
-      await redis.disconnect();
-      return;
+
+      const articlesKey = `media:source:${domain}:articles`;
+      const metaKey = `media:source:${domain}:meta`;
+      const dedupKey = `media:dedup:${simpleHash(url)}`;
+
+      // Skip if Bedrock flagged article as not trans-related
+      if (parsed.relevant === false) {
+        console.log('[media-bias] skip irrelevant', {
+          domain,
+          source: item.source,
+          title: item.title,
+          summaryLen: item.summary?.length ?? 0,
+          parsed,
+        });
+        return;
+      }
+      // Skip if already scored this article
+      const alreadyScored = await redis.get(dedupKey);
+      if (alreadyScored) {
+        console.log('[media-bias] skip already-scored', {
+          domain,
+          source: item.source,
+          title: item.title,
+          dedupKey,
+        });
+        return;
+      }
+
+      await redis.set(dedupKey, '1', { EX: 60 * 60 * 24 * 7 }); // 7-day dedup window
+      await redis.lPush(articlesKey, record);
+      await redis.lTrim(articlesKey, 0, 99);
+
+      const meta = await redis.hGetAll(metaKey);
+      let prevTotal = parseInt(meta?.totalScore ?? '0', 10);
+      let prevCount = parseInt(meta?.articleCount ?? '0', 10);
+      // Reset corrupted meta: totalScore=0 with high articleCount means pre-fix bad state
+      if (prevCount > 5 && prevTotal === 0) {
+        prevTotal = 0;
+        prevCount = 0;
+      }
+      const newCount = prevCount + 1;
+      const newTotal = prevTotal + score;
+      const avgScore = Math.round(newTotal / newCount);
+
+      await redis.hSet(metaKey, {
+        name: SOURCE_NAMES[domain] ?? domain,
+        domain,
+        editorialBias: BIAS_EDITORIAL[domain] ?? 'neutral',
+        articleCount: String(newCount),
+        totalScore: String(newTotal),
+        avgScore: String(avgScore),
+        avgLabel: biasScoreToLabel(avgScore),
+        lastSeenAt: new Date(item.publishedAt).toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      await redis.sAdd('media:bias:index', domain);
+      console.log('[media-bias] wrote domain', domain, 'source', item.source, 'title', item.title, 'summaryLen', item.summary?.length ?? 0);
+    } finally {
+      await redis.disconnect().catch(() => {});
     }
-
-    await redis.set(dedupKey, '1', { EX: 60 * 60 * 24 * 7 }); // 7-day dedup window
-    await redis.lPush(articlesKey, record);
-    await redis.lTrim(articlesKey, 0, 99);
-
-    const meta = await redis.hGetAll(metaKey);
-    let prevTotal = parseInt(meta?.totalScore  ?? '0', 10);
-    let prevCount = parseInt(meta?.articleCount ?? '0', 10);
-    // Reset corrupted meta: totalScore=0 with high articleCount means pre-fix bad state
-    if (prevCount > 5 && prevTotal === 0) { prevTotal = 0; prevCount = 0; }
-    const newCount  = prevCount + 1;
-    const newTotal  = prevTotal + score;
-    const avgScore  = Math.round(newTotal / newCount);
-
-    await redis.hSet(metaKey, {
-      name:          SOURCE_NAMES[domain] ?? domain,
-      domain,
-      editorialBias: BIAS_EDITORIAL[domain] ?? 'neutral',
-      articleCount:  String(newCount),
-      totalScore:    String(newTotal),
-      avgScore:      String(avgScore),
-      avgLabel:      biasScoreToLabel(avgScore),
-      lastSeenAt:    new Date(item.publishedAt).toISOString(),
-      updatedAt:     new Date().toISOString(),
-    });
-
-    await redis.sAdd('media:bias:index', domain);
-    console.log('[media-bias] wrote domain', domain, 'source', item.source, 'title', item.title, 'summaryLen', item.summary?.length ?? 0);
-    await redis.disconnect();
 
   } catch (err) {
     console.warn('[bias] score/ingest failed for', domain, (err as Error).message);
