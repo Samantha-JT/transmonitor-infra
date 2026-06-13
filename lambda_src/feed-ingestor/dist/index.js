@@ -2140,6 +2140,140 @@ async function pushover({ token, user, title, message, priority = 0 }) {
 // feed-ingestor/index.mjs
 var import_client_s3 = require("@aws-sdk/client-s3");
 var import_fast_xml_parser = __toESM(require_fxp(), 1);
+
+// _shared/media-bias-domains.ts
+var SOURCE_REGISTRY = {
+  "aberdareonline.co.uk": { name: "Aberdare Online", domain: "aberdareonline.co.uk", editorialBias: "neutral", aliases: ["aberdareonline.co.uk"] },
+  "advocate.com": { name: "The Advocate", domain: "advocate.com", editorialBias: "positive", aliases: ["Advocate.com", "Puberty Blocker Rulings"] },
+  "akc.org": { name: "American Kennel Club", domain: "akc.org", editorialBias: "neutral", aliases: ["American Kennel Club"] },
+  "andrewsullivan.substack.com": { name: "Andrew Sullivan", domain: "andrewsullivan.substack.com", editorialBias: "hostile", aliases: ["The Weekly Dish | Andrew Sullivan"] },
+  "aol.com": { name: "AOL", domain: "aol.com", editorialBias: "neutral", aliases: ["AOL.com"] },
+  "apnews.com": { name: "Apnews", domain: "apnews.com", editorialBias: "neutral", aliases: [] },
+  "assignedmedia.org": { name: "Assigned Media", domain: "assignedmedia.org", editorialBias: "supportive", aliases: ["Assigned Media Backfill", "Assigned Media Search"] },
+  "attitude.co.uk": { name: "Attitude", domain: "attitude.co.uk", editorialBias: "supportive", aliases: ["Attitude Backfill", "Attitude Search"] },
+  "bbc.co.uk": { name: "BBC News", domain: "bbc.co.uk", editorialBias: "negative", aliases: ["BBC", "BBC Trans Coverage"] },
+  "bostonglobe.com": { name: "The Boston Globe", domain: "bostonglobe.com", editorialBias: "neutral", aliases: ["The Boston Globe"] },
+  "catholicworldreport.com": { name: "Catholic World Report", domain: "catholicworldreport.com", editorialBias: "neutral", aliases: ["Catholic World Report"] },
+  "cbn.com": { name: "CBN", domain: "cbn.com", editorialBias: "neutral", aliases: ["CBN", "cbn.com"] },
+  "channel4.com": { name: "Channel 4 News", domain: "channel4.com", editorialBias: "positive", aliases: ["Channel 4", "Channel 4 News Backfill", "Channel 4 News Search"] },
+  "dailymail.co.uk": { name: "The Daily Mail", domain: "dailymail.co.uk", editorialBias: "hostile", aliases: ["Daily Mail", "Daily Mail Backfill", "Daily Mail Search", "Mail Trans"] },
+  "divamag.co.uk": { name: "DIVA Magazine", domain: "divamag.co.uk", editorialBias: "supportive", aliases: ["DIVA Magazine Backfill", "DIVA Magazine Search"] },
+  "donoharmmedicine.org": { name: "Do No Harm", domain: "donoharmmedicine.org", editorialBias: "neutral", aliases: ["donoharmmedicine.org"] },
+  "erininthemorning.com": { name: "Erin in the Morning", domain: "erininthemorning.com", editorialBias: "supportive", aliases: ["Erin Backfill", "Erin Search"] },
+  "express.co.uk": { name: "Daily Express", domain: "express.co.uk", editorialBias: "negative", aliases: ["Daily Express Backfill", "Daily Express Search", "Express"] },
+  "gate.ngo": { name: "GATE Global", domain: "gate.ngo", editorialBias: "supportive", aliases: ["GATE Backfill", "GATE Search"] },
+  "gbnews.com": { name: "GB News", domain: "gbnews.com", editorialBias: "hostile", aliases: [] },
+  "genderanalysis.net": { name: "Genderanalysis", domain: "genderanalysis.net", editorialBias: "neutral", aliases: ["Gender Analysis"] },
+  "glaad.org": { name: "GLAAD", domain: "glaad.org", editorialBias: "supportive", aliases: ["GLAAD Backfill", "GLAAD Search"] },
+  "glad.org": { name: "GLAD Law", domain: "glad.org", editorialBias: "supportive", aliases: ["GLAD Law"] },
+  "goodlawproject.org": { name: "Good Law Project", domain: "goodlawproject.org", editorialBias: "positive", aliases: [] },
+  "huffingtonpost.co.uk": { name: "HuffPost UK", domain: "huffingtonpost.co.uk", editorialBias: "positive", aliases: ["HuffPost", "HuffPost UK Backfill", "HuffPost UK Search"] },
+  "idahonews.com": { name: "KBOI", domain: "idahonews.com", editorialBias: "neutral", aliases: ["KBOI"] },
+  "idahonews6.com": { name: "Idaho News 6", domain: "idahonews6.com", editorialBias: "neutral", aliases: ["Idaho News 6"] },
+  "ilga.org": { name: "ILGA World", domain: "ilga.org", editorialBias: "supportive", aliases: [] },
+  "independent.co.uk": { name: "The Independent", domain: "independent.co.uk", editorialBias: "neutral", aliases: ["Independent Trans"] },
+  "inews.co.uk": { name: "The i", domain: "inews.co.uk", editorialBias: "neutral", aliases: ["The i Backfill", "The i Search", "i news", "inews"] },
+  "itv.com": { name: "ITV News", domain: "itv.com", editorialBias: "negative", aliases: ["ITV"] },
+  "lambdalegal.org": { name: "Lambda Legal", domain: "lambdalegal.org", editorialBias: "supportive", aliases: [] },
+  "mainichi.jp": { name: "Mainichi", domain: "mainichi.jp", editorialBias: "neutral", aliases: ["\u6BCE\u65E5\u65B0\u805E"] },
+  "metro.co.uk": { name: "Metro", domain: "metro.co.uk", editorialBias: "neutral", aliases: ["Metro Trans", "Metro.co.uk"] },
+  "mirror.co.uk": { name: "The Mirror", domain: "mirror.co.uk", editorialBias: "neutral", aliases: ["Daily Mirror"] },
+  "nationalreview.com": { name: "National Review", domain: "nationalreview.com", editorialBias: "neutral", aliases: ["National Review"] },
+  "ndtv.com": { name: "NDTV", domain: "ndtv.com", editorialBias: "neutral", aliases: ["Asia-Pacific Trans News"] },
+  "nytimes.com": { name: "New York Times", domain: "nytimes.com", editorialBias: "neutral", aliases: ["The New York Times"] },
+  "operationsports.com": { name: "Operation Sports", domain: "operationsports.com", editorialBias: "neutral", aliases: ["Operation Sports"] },
+  "pinknews.co.uk": { name: "Pink News", domain: "pinknews.co.uk", editorialBias: "supportive", aliases: ["PinkNews", "PinkNews | Latest lesbian, gay, bi and trans news"] },
+  "reuters.com": { name: "Reuters", domain: "reuters.com", editorialBias: "neutral", aliases: ["Reuters Trans Coverage"] },
+  "sky.com": { name: "Sky News", domain: "sky.com", editorialBias: "neutral", aliases: [] },
+  "sltrib.com": { name: "The Salt Lake Tribune", domain: "sltrib.com", editorialBias: "neutral", aliases: ["The Salt Lake Tribune"] },
+  "spectator.co.uk": { name: "The Spectator", domain: "spectator.co.uk", editorialBias: "hostile", aliases: ["The Spectator Backfill", "The Spectator Search"] },
+  "spokesman.com": { name: "The Spokesman-Review", domain: "spokesman.com", editorialBias: "neutral", aliases: ["The Spokesman-Review"] },
+  "statnews.com": { name: "STAT News", domain: "statnews.com", editorialBias: "neutral", aliases: ["STAT", "STAT News", "STAT News LGBTQ"] },
+  "stonewall.org.uk": { name: "Stonewall", domain: "stonewall.org.uk", editorialBias: "supportive", aliases: ["Stonewall Backfill", "Stonewall Search"] },
+  "talk.tv": { name: "TalkTV", domain: "talk.tv", editorialBias: "hostile", aliases: ["Talk TV", "TalkTV Backfill", "TalkTV Search"] },
+  "telegraph.co.uk": { name: "The Daily Telegraph", domain: "telegraph.co.uk", editorialBias: "hostile", aliases: ["The Telegraph", "The Telegraph Trans"] },
+  "tgeu.org": { name: "TGEU", domain: "tgeu.org", editorialBias: "supportive", aliases: ["TGEU News"] },
+  "thegrio.com": { name: "TheGrio", domain: "thegrio.com", editorialBias: "neutral", aliases: ["TheGrio"] },
+  "theguardian.com": { name: "The Guardian", domain: "theguardian.com", editorialBias: "negative", aliases: ["Guardian Trans", "Guardian Transgender"] },
+  "them.us": { name: "Them", domain: "them.us", editorialBias: "supportive", aliases: [] },
+  "theolympian.com": { name: "The Olympian", domain: "theolympian.com", editorialBias: "neutral", aliases: ["The Olympian"] },
+  "thesun.co.uk": { name: "The Sun", domain: "thesun.co.uk", editorialBias: "hostile", aliases: ["The Sun Backfill", "The Sun Search"] },
+  "thetimes.co.uk": { name: "The Times", domain: "thetimes.co.uk", editorialBias: "hostile", aliases: ["The Times Trans", "Times Trans"] },
+  "theweek.com": { name: "The Week", domain: "theweek.com", editorialBias: "neutral", aliases: ["The Week"] },
+  "transactual.org.uk": { name: "TransActual", domain: "transactual.org.uk", editorialBias: "supportive", aliases: ["TransActual Backfill", "TransActual Search", "TransActual UK"] },
+  "transequality.org": { name: "Trans Equality", domain: "transequality.org", editorialBias: "supportive", aliases: ["Trans Equality Backfill", "Trans Equality Search"] },
+  "transgenderfeed.com": { name: "Transgender Feed", domain: "transgenderfeed.com", editorialBias: "supportive", aliases: [] },
+  "transgenderlawcenter.org": { name: "Trans Law Center", domain: "transgenderlawcenter.org", editorialBias: "supportive", aliases: ["Trans Law Center Backfill", "Trans Law Center Search"] },
+  "translash.org": { name: "TransLash", domain: "translash.org", editorialBias: "supportive", aliases: ["TransLash Backfill", "TransLash Search"] },
+  "transvitae.com": { name: "TransVitae", domain: "transvitae.com", editorialBias: "supportive", aliases: [] },
+  "ucla.edu": { name: "UCLA", domain: "ucla.edu", editorialBias: "neutral", aliases: ["Newsroom | UCLA", "UCLA"] },
+  "vice.com": { name: "Vice UK", domain: "vice.com", editorialBias: "positive", aliases: ["Vice", "Vice UK Backfill", "Vice UK Search"] },
+  "washingtonpost.com": { name: "Washington Post", domain: "washingtonpost.com", editorialBias: "neutral", aliases: ["The Washington Post"] },
+  "washingtonstand.com": { name: "The Washington Stand", domain: "washingtonstand.com", editorialBias: "neutral", aliases: ["The Washington Stand"] }
+};
+var REGISTRY_DOMAINS = new Set(Object.keys(SOURCE_REGISTRY));
+var EDITORIAL_BY_DOMAIN = Object.fromEntries(
+  Object.values(SOURCE_REGISTRY).map((s) => [s.domain, s.editorialBias])
+);
+var NAME_BY_DOMAIN = Object.fromEntries(
+  Object.values(SOURCE_REGISTRY).map((s) => [s.domain, s.name])
+);
+var ALIAS_TO_DOMAIN = (() => {
+  const m = {};
+  for (const entry of Object.values(SOURCE_REGISTRY)) {
+    m[entry.name] = entry.domain;
+    for (const a of entry.aliases) m[a] = entry.domain;
+  }
+  return m;
+})();
+function normaliseBiasHost(hostname) {
+  const h = hostname.toLowerCase().replace(/^www\./, "").replace(/^amp\./, "").replace(/^m\./, "");
+  if (h === "diva-magazine.com") return "divamag.co.uk";
+  return h;
+}
+function isGoogleNewsUrl(url) {
+  try {
+    const h = normaliseBiasHost(new URL(url).hostname);
+    return h === "news.google.com" || h.endsWith(".google.com");
+  } catch {
+    return false;
+  }
+}
+function extractBiasDomainFromUrl(url) {
+  try {
+    const h = normaliseBiasHost(new URL(url).hostname);
+    if (h === "news.google.com" || h.endsWith(".google.com")) {
+      return null;
+    }
+    for (const k of REGISTRY_DOMAINS) {
+      if (h === k || h.endsWith("." + k)) return k;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function extractPublisherSuffix(title) {
+  const m = title.match(/\s+-\s+(.{2,100})\s*$/);
+  return m?.[1]?.trim() ?? null;
+}
+function canResolveBiasDomain(item) {
+  const urlDomain = extractBiasDomainFromUrl(item.link);
+  if (urlDomain) return true;
+  if (isGoogleNewsUrl(item.link)) {
+    const publisher = extractPublisherSuffix(item.title);
+    if (publisher && ALIAS_TO_DOMAIN[publisher]) return true;
+    return !!ALIAS_TO_DOMAIN[item.source];
+  }
+  return !!ALIAS_TO_DOMAIN[item.source];
+}
+
+// _shared/media-bias-queue.ts
+var BIAS_QUEUE_KEY = "media:bias:queue";
+var BIAS_QUEUE_MAX = 500;
+var BIAS_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+// feed-ingestor/index.mjs
 var s3 = new import_client_s3.S3Client({ region: process.env.AWS_REGION });
 var redisClient = null;
 async function getRedis() {
@@ -2316,6 +2450,26 @@ var handler = async () => {
     const redis = await getRedis();
     await redis.set(`digest:${variant}`, body, { EX: 1200 });
     console.log("feed-ingestor: Redis warmed");
+    try {
+      const refs = [];
+      for (const item of deduped) {
+        if (!item.link) continue;
+        if (!canResolveBiasDomain({ link: item.link, title: item.title, source: item.source })) continue;
+        refs.push(JSON.stringify({
+          url: item.link,
+          title: item.title,
+          source: item.source,
+          publishedAt: new Date(item.pubDate).getTime()
+        }));
+      }
+      if (refs.length > 0) {
+        await redis.rPush(BIAS_QUEUE_KEY, refs);
+        await redis.lTrim(BIAS_QUEUE_KEY, -BIAS_QUEUE_MAX, -1);
+        console.log(`feed-ingestor: enqueued ${refs.length} bias refs`);
+      }
+    } catch (e) {
+      console.warn("feed-ingestor: bias enqueue failed (non-fatal):", e.message);
+    }
   } catch (e) {
     console.warn("feed-ingestor: Redis failed (non-fatal):", e.message);
     await pushover({

@@ -57,6 +57,8 @@ module "scheduler" {
   name_prefix                 = local.name_prefix
   feed_ingestor_function_arn  = module.lambdas.feed_ingestor_arn
   feed_ingestor_function_name = module.lambdas.feed_ingestor_name
+  media_bias_function_arn     = module.lambdas.media_bias_arn
+  media_bias_function_name    = module.lambdas.media_bias_name
 }
 
 module "cloudflare" {

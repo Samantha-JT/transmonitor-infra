@@ -442,6 +442,9 @@ output "function_names" {
 output "feed_ingestor_arn" { value = aws_lambda_function.feed_ingestor.arn }
 output "feed_ingestor_name" { value = aws_lambda_function.feed_ingestor.function_name }
 
+output "media_bias_arn" { value = aws_lambda_function.media_bias.arn }
+output "media_bias_name" { value = aws_lambda_function.media_bias.function_name }
+
 data "archive_file" "media_bias" {
   type        = "zip"
   source_dir  = "${path.root}/lambda_src/media-bias/dist"

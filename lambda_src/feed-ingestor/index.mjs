@@ -2,6 +2,8 @@ import { createClient } from "redis";
 import { pushover } from "./pushover.mjs";;
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { XMLParser } from "fast-xml-parser";
+import { canResolveBiasDomain } from "../_shared/media-bias-domains.js";
+import { BIAS_QUEUE_KEY, BIAS_QUEUE_MAX } from "../_shared/media-bias-queue.js";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 let redisClient = null;
@@ -199,6 +201,31 @@ export const handler = async () => {
     const redis = await getRedis();
     await redis.set(`digest:${variant}`, body, { EX: 1200 });
     console.log("feed-ingestor: Redis warmed");
+
+    // ── Media-bias producer (PR2) ──────────────────────────────────────────
+    // Enqueue refs for items whose domain resolves to a known bias source so the
+    // media-bias lambda's scheduled consumer can score them out-of-band. Capped
+    // so the list cannot grow unbounded if the consumer is down. Non-fatal.
+    try {
+      const refs = [];
+      for (const item of deduped) {
+        if (!item.link) continue;
+        if (!canResolveBiasDomain({ link: item.link, title: item.title, source: item.source })) continue;
+        refs.push(JSON.stringify({
+          url: item.link,
+          title: item.title,
+          source: item.source,
+          publishedAt: new Date(item.pubDate).getTime(),
+        }));
+      }
+      if (refs.length > 0) {
+        await redis.rPush(BIAS_QUEUE_KEY, refs);
+        await redis.lTrim(BIAS_QUEUE_KEY, -BIAS_QUEUE_MAX, -1); // keep newest BIAS_QUEUE_MAX
+        console.log(`feed-ingestor: enqueued ${refs.length} bias refs`);
+      }
+    } catch (e) {
+      console.warn("feed-ingestor: bias enqueue failed (non-fatal):", e.message);
+    }
   } catch (e) {
     console.warn("feed-ingestor: Redis failed (non-fatal):", e.message);
     await pushover({
