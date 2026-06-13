@@ -20,15 +20,19 @@
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// Whitelist — never block these IPs
+// Whitelist — never block these IPs.
+// NOTE: home IP is DYNAMIC, so this entry goes stale on every ISP lease change
+// and cannot be relied on for dev access. The real lockout fix is the
+// static-asset rate-counting skip below; this list is only for genuinely
+// fixed IPs. Update if your current address changes, or use a KV allow key.
 const WHITELISTED_IPS = new Set([
-  "84.247.43.123", // home
+  "84.247.40.149", // home (dynamic — may go stale)
 ]);
 
 const THRESHOLDS = {
   RATE_LIMIT_WINDOW_SECS: 300,
   RATE_LIMIT_BLOCK:       100,
-  RATE_LIMIT_CHALLENGE:   40,
+  RATE_LIMIT_CHALLENGE:   80,   // raised from 40: one dashboard view makes many API calls
   SCORE_BLOCK:            80,
   SCORE_CHALLENGE:        50,
   CF_THREAT_BLOCK:        25,
@@ -82,6 +86,21 @@ export default {
     const ip       = request.headers.get("CF-Connecting-IP") ?? "unknown";
 
     if (WHITELISTED_IPS.has(ip)) {
+      return env.API_PROXY ? env.API_PROXY.fetch(request) : fetch(request);
+    }
+
+    // ── Fast path: static assets bypass scoring + rate counting ───────────────
+    // The SPA shell, JS/CSS bundles, fonts and images are the bulk of a
+    // legitimate page load. Counting them toward the per-IP rate limit means a
+    // single human viewing the dashboard burns the budget in one visit (this
+    // is what caused false-positive 403 lockouts). Pass them straight through.
+    // NOTE: scanner paths (.env, shell.php, wp-config, etc.) do not match these
+    // static extensions, so scanner detection is unaffected.
+    const earlyPath = new URL(request.url).pathname;
+    if (
+      earlyPath.startsWith("/assets/") ||
+      /\.(?:js|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot)$/i.test(earlyPath)
+    ) {
       return env.API_PROXY ? env.API_PROXY.fetch(request) : fetch(request);
     }
 
