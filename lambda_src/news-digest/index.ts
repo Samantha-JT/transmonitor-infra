@@ -896,41 +896,60 @@ async function buildDigest(variant: string, lang: string): Promise<DigestResult>
 
     const biasTargetsToEnqueue = [...directBiasTargets];
 
-    const aiCategoryFilterBudgetMs = Number(process.env.AI_CATEGORY_FILTER_BUDGET_MS ?? '2500');
-    const aiCategoryFilterDeadline = Date.now() + aiCategoryFilterBudgetMs;
-    const aiCategoryFilterMaxItems = Number(process.env.AI_CATEGORY_FILTER_MAX_ITEMS ?? '8');
+    // Trans-relevance filtering (two-phase, single batched AI call).
+    //
+    // Phase 1 here: across ALL filtered categories, run the cheap synchronous
+    // keyword filter and collect every keyword-FAILED item into one list. Then
+    // make a SINGLE batched aiFilterTransRelevant call (chunked to respect the
+    // model's response token cap) to semantically rescue dog-whistle / hostile
+    // coverage that doesn't use obvious trans keywords. This replaces the old
+    // per-category, 8-item-capped, wall-clock-budgeted approach that pre-expired
+    // its deadline before any AI call ran and silently dropped most candidates.
+    //
+    // aiFilterTransRelevant is one Bedrock round-trip per batch (~1-2s for ~40
+    // titles), so a single global call comfortably fits the Lambda timeout —
+    // no per-category budget needed.
+    const TRANS_FILTERED_CATEGORIES = new Set(['community', 'legal', 'mainstream', 'safety', 'international', 'uk-press', 'wins']);
+    const AI_FILTER_CHUNK = Number(process.env.AI_FILTER_CHUNK ?? '40');
+
+    // Precompute keyword pass/fail per category so we don't run isTransRelevant twice.
+    const keywordPassedByCategory = new Map<string, ParsedItem[]>();
+    const keywordFailedByCategory = new Map<string, ParsedItem[]>();
+    const allKeywordFailed: ParsedItem[] = [];
 
     for (const [category, sliced] of slicedByCategory) {
-      // trans variant: filter noisy categories to trans-relevant items only.
-      // Two-pass hybrid filter:
-      //   1. Keyword filter (fast, zero-cost) — keep clear hits
-      //   2. AI filter via Ollama/Bedrock (semantic) — rescue keyword-missed items
-      //      but only within a small time/item budget so the digest can still return.
-      // Applied to: community (broad LGBTQ+ RSS), legal (broad keyword queries),
-      //             mainstream (general news outlets)
-      const TRANS_FILTERED_CATEGORIES = new Set(['community', 'legal', 'mainstream', 'safety', 'international', 'uk-press', 'wins']);
+      if (variant !== 'trans' || !TRANS_FILTERED_CATEGORIES.has(category)) continue;
+      const passed = sliced.filter(item => isTransRelevant(item));
+      const failed = sliced.filter(item => !isTransRelevant(item));
+      keywordPassedByCategory.set(category, passed);
+      keywordFailedByCategory.set(category, failed);
+      for (const item of failed) allKeywordFailed.push(item);
+    }
+
+    // One batched AI rescue pass over ALL keyword-failed items, chunked so the
+    // JSON boolean-array response cannot exceed the model's max_tokens.
+    const aiRescued = new Set<ParsedItem>();
+    if (allKeywordFailed.length > 0) {
+      console.log(`[digest] ai rescue: ${allKeywordFailed.length} keyword-failed items across categories`);
+      for (let i = 0; i < allKeywordFailed.length; i += AI_FILTER_CHUNK) {
+        const chunk = allKeywordFailed.slice(i, i + AI_FILTER_CHUNK);
+        const aiResults = await aiFilterTransRelevant(chunk).catch(err => {
+          console.warn('[digest] ai rescue chunk failed, dropping items:', (err as Error).message);
+          return chunk.map(() => false);
+        });
+        chunk.forEach((item, j) => { if (aiResults[j]) aiRescued.add(item); });
+      }
+      console.log(`[digest] ai rescue passed=${aiRescued.size} rejected=${allKeywordFailed.length - aiRescued.size}`);
+    }
+
+    for (const [category, sliced] of slicedByCategory) {
+      // Phase 2: assemble this category's filtered items from the precomputed
+      // keyword-passed set plus any AI-rescued keyword-failed items.
       let filteredSliced = sliced;
       if (variant === 'trans' && TRANS_FILTERED_CATEGORIES.has(category)) {
-        const keywordPassed = sliced.filter(item => isTransRelevant(item));
-        const keywordFailed = sliced.filter(item => !isTransRelevant(item));
-        let aiPassed: typeof sliced = [];
-
-        if (keywordFailed.length > 0 && Date.now() < aiCategoryFilterDeadline) {
-          const limitedKeywordFailed = keywordFailed.slice(0, aiCategoryFilterMaxItems);
-
-          const aiResults = await aiFilterTransRelevant(limitedKeywordFailed).catch(err => {
-            console.warn('[digest] ai filter error, dropping failed items:', (err as Error).message);
-            return limitedKeywordFailed.map(() => false);
-          });
-
-          aiPassed = limitedKeywordFailed.filter((_, i) => aiResults[i]);
-        } else if (keywordFailed.length > 0) {
-          console.warn('[digest] skipping category AI rescue due to time budget', {
-            category,
-            keywordFailed: keywordFailed.length,
-          });
-        }
-
+        const keywordPassed = keywordPassedByCategory.get(category) ?? [];
+        const keywordFailed = keywordFailedByCategory.get(category) ?? [];
+        const aiPassed = keywordFailed.filter(item => aiRescued.has(item));
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
       // Collect this category's resolvable bias targets for out-of-band enqueueing.

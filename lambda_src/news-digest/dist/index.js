@@ -1473,29 +1473,40 @@ async function buildDigest(variant, lang) {
       return true;
     });
     const biasTargetsToEnqueue = [...directBiasTargets];
-    const aiCategoryFilterBudgetMs = Number(process.env.AI_CATEGORY_FILTER_BUDGET_MS ?? "2500");
-    const aiCategoryFilterDeadline = Date.now() + aiCategoryFilterBudgetMs;
-    const aiCategoryFilterMaxItems = Number(process.env.AI_CATEGORY_FILTER_MAX_ITEMS ?? "8");
+    const TRANS_FILTERED_CATEGORIES = /* @__PURE__ */ new Set(["community", "legal", "mainstream", "safety", "international", "uk-press", "wins"]);
+    const AI_FILTER_CHUNK = Number(process.env.AI_FILTER_CHUNK ?? "40");
+    const keywordPassedByCategory = /* @__PURE__ */ new Map();
+    const keywordFailedByCategory = /* @__PURE__ */ new Map();
+    const allKeywordFailed = [];
     for (const [category, sliced] of slicedByCategory) {
-      const TRANS_FILTERED_CATEGORIES = /* @__PURE__ */ new Set(["community", "legal", "mainstream", "safety", "international", "uk-press", "wins"]);
+      if (variant !== "trans" || !TRANS_FILTERED_CATEGORIES.has(category)) continue;
+      const passed = sliced.filter((item) => isTransRelevant(item));
+      const failed = sliced.filter((item) => !isTransRelevant(item));
+      keywordPassedByCategory.set(category, passed);
+      keywordFailedByCategory.set(category, failed);
+      for (const item of failed) allKeywordFailed.push(item);
+    }
+    const aiRescued = /* @__PURE__ */ new Set();
+    if (allKeywordFailed.length > 0) {
+      console.log(`[digest] ai rescue: ${allKeywordFailed.length} keyword-failed items across categories`);
+      for (let i = 0; i < allKeywordFailed.length; i += AI_FILTER_CHUNK) {
+        const chunk = allKeywordFailed.slice(i, i + AI_FILTER_CHUNK);
+        const aiResults = await aiFilterTransRelevant(chunk).catch((err) => {
+          console.warn("[digest] ai rescue chunk failed, dropping items:", err.message);
+          return chunk.map(() => false);
+        });
+        chunk.forEach((item, j) => {
+          if (aiResults[j]) aiRescued.add(item);
+        });
+      }
+      console.log(`[digest] ai rescue passed=${aiRescued.size} rejected=${allKeywordFailed.length - aiRescued.size}`);
+    }
+    for (const [category, sliced] of slicedByCategory) {
       let filteredSliced = sliced;
       if (variant === "trans" && TRANS_FILTERED_CATEGORIES.has(category)) {
-        const keywordPassed = sliced.filter((item) => isTransRelevant(item));
-        const keywordFailed = sliced.filter((item) => !isTransRelevant(item));
-        let aiPassed = [];
-        if (keywordFailed.length > 0 && Date.now() < aiCategoryFilterDeadline) {
-          const limitedKeywordFailed = keywordFailed.slice(0, aiCategoryFilterMaxItems);
-          const aiResults = await aiFilterTransRelevant(limitedKeywordFailed).catch((err) => {
-            console.warn("[digest] ai filter error, dropping failed items:", err.message);
-            return limitedKeywordFailed.map(() => false);
-          });
-          aiPassed = limitedKeywordFailed.filter((_, i) => aiResults[i]);
-        } else if (keywordFailed.length > 0) {
-          console.warn("[digest] skipping category AI rescue due to time budget", {
-            category,
-            keywordFailed: keywordFailed.length
-          });
-        }
+        const keywordPassed = keywordPassedByCategory.get(category) ?? [];
+        const keywordFailed = keywordFailedByCategory.get(category) ?? [];
+        const aiPassed = keywordFailed.filter((item) => aiRescued.has(item));
         filteredSliced = [...keywordPassed, ...aiPassed];
       }
       const categoryBiasTargets = filteredSliced.filter((item) => item.link && (item.scanAllWithBedrock === true || isGoogleNewsUrl(item.link)) && canResolveBiasDomain(item));
