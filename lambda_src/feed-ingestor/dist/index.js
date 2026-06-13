@@ -2414,10 +2414,20 @@ var handler = async () => {
   console.log(`feed-ingestor: fetching ${allFeeds.length} feeds`);
   const BATCH_SIZE = 8;
   const allItems = [];
+  const feedStats = [];
   for (let i = 0; i < allFeeds.length; i += BATCH_SIZE) {
     const batch = allFeeds.slice(i, i + BATCH_SIZE);
     const results = await Promise.all(batch.map(fetchAndParseFeed));
-    allItems.push(...results.flat());
+    results.forEach((items, j) => {
+      feedStats.push({ name: batch[j].name, count: items.length });
+      allItems.push(...items);
+    });
+  }
+  const summary = feedStats.map((s) => `${s.name}=${s.count}`).join(", ");
+  console.log(`feed-ingestor: per-feed counts: ${summary}`);
+  const empties = feedStats.filter((s) => s.count === 0).map((s) => s.name);
+  if (empties.length > 0) {
+    console.warn(`feed-ingestor: ${empties.length} feed(s) returned 0 items: ${empties.join(", ")}`);
   }
   const seen = /* @__PURE__ */ new Set();
   const deduped = allItems.filter((item) => {
