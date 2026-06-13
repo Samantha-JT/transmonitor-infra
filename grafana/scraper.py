@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import requests
+from prometheus_client import Histogram, Counter
 from datetime import datetime, timezone, timedelta
 from prometheus_client import start_http_server, Gauge, Counter
 
@@ -101,9 +102,70 @@ def scrape():
         scrape_errors.inc()
         log.error(f"Scrape failed: {e}")
 
+
+PAGE_LOAD_MS = Histogram(
+    "transmonitor_page_load_ms",
+    "Synthetic page load time in milliseconds",
+    ["path"],
+    buckets=(100, 250, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000),
+)
+
+TTFB_MS = Histogram(
+    "transmonitor_ttfb_ms",
+    "Synthetic time to first byte in milliseconds",
+    ["path"],
+    buckets=(50, 100, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000),
+)
+
+PAGE_LOAD_COUNT = Counter(
+    "transmonitor_page_load_count",
+    "Synthetic page load probe count",
+    ["path", "status"],
+)
+
+PAGE_LOAD_SLOW_TOTAL = Counter(
+    "transmonitor_page_load_slow_total",
+    "Synthetic page load probes slower than 3000ms",
+    ["path"],
+)
+
+def probe_page_load():
+    url = os.environ.get("PAGE_LOAD_URL", "https://trans-news.com/")
+    path = "/"
+
+    try:
+        start = time.perf_counter()
+        response = requests.get(url, timeout=10, stream=True)
+
+        # TTFB approximation: time until headers are available.
+        ttfb_ms = (time.perf_counter() - start) * 1000
+
+        # Consume body so this is closer to full document load, not just headers.
+        _ = response.content
+        total_ms = (time.perf_counter() - start) * 1000
+
+        PAGE_LOAD_MS.labels(path=path).observe(total_ms)
+        TTFB_MS.labels(path=path).observe(ttfb_ms)
+        PAGE_LOAD_COUNT.labels(path=path, status=str(response.status_code)).inc()
+
+        if total_ms > 3000:
+            PAGE_LOAD_SLOW_TOTAL.labels(path=path).inc()
+
+        log.info(
+            "Page load probe: url=%s status=%s ttfb_ms=%.1f total_ms=%.1f",
+            url,
+            response.status_code,
+            ttfb_ms,
+            total_ms,
+        )
+    except Exception:
+        PAGE_LOAD_COUNT.labels(path=path, status="error").inc()
+        log.exception("Page load probe failed")
+
 if __name__ == "__main__":
     log.info("Starting CF scraper on :9101")
     start_http_server(9101)
     while True:
         scrape()
+        probe_page_load()
         time.sleep(SCRAPE_INTERVAL)

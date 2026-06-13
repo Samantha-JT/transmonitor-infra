@@ -31,7 +31,7 @@ const FEEDS = {
     { name: "EU Gender Recognition", url: gn('("gender self-determination" OR "Ley Trans" OR "Selbstbestimmungsgesetz") when:7d') },
   ],
   healthcare: [
-    { name: "Gender Analysis", url: "https://genderanalysis.net/feed/" },
+    { name: "Gender Analysis", url: "https://genderanalysis.net/feed/", timeoutMs: 15000 },
     { name: "Trans Healthcare Access", url: gn('("transgender" OR "trans rights") ("gender-affirming care" OR "puberty blockers" OR "hormone therapy" OR "HRT") when:3d') },
     { name: "Cass Review Coverage", url: gn('("Cass Review" OR "Tavistock clinic") when:7d') },
     { name: "Puberty Blocker Rulings", url: gn('"puberty blockers" (court OR ruling OR ban) when:7d') },
@@ -128,7 +128,11 @@ function itemToNewsItem(item, sourceName, isAtom) {
 
 async function fetchAndParseFeed(feed) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(process.env.FEED_TIMEOUT_MS ?? 5000));
+  // Per-feed timeout override (feed.timeoutMs) falls back to the global default.
+  // Used for feeds with large payloads whose parse time exceeds the default,
+  // e.g. Gender Analysis publishes full article bodies in content:encoded.
+  const timeoutMs = feed.timeoutMs ?? Number(process.env.FEED_TIMEOUT_MS ?? 5000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(feed.url, {
       signal: controller.signal,
