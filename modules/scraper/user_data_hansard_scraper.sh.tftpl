@@ -45,17 +45,17 @@ test -s hansard_trans.db
 aws s3 cp hansard_trans.db \
   s3://${static_bucket_name}/hansard_trans.db \
   --region eu-west-1 \
-  --content-type application/octet-stream \
-  --cache-control "public, max-age=86400"
+  --content-type application/vnd.sqlite3 \
+  --cache-control "no-cache, no-store, must-revalidate"
 
 gzip -9 -c hansard_trans.db > /tmp/hansard_trans.db.gz
 
 aws s3 cp /tmp/hansard_trans.db.gz \
   s3://${static_bucket_name}/hansard_trans.db.gz \
   --region eu-west-1 \
-  --content-type application/octet-stream \
+  --content-type application/gzip \
   --content-encoding gzip \
-  --cache-control "public, max-age=86400"
+  --cache-control "no-cache, no-store, must-revalidate"
 
 rm -f /tmp/hansard_trans.db.gz
 SCRIPT

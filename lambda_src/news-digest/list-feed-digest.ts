@@ -12,8 +12,8 @@ import { cachedFetchJson, getCachedJsonBatch, runRedisPipeline } from '../../../
 import { markNoCacheResponse } from '../../../_shared/response-headers';
 import { sha256Hex } from '../../../_shared/hash';
 import { CHROME_UA } from '../../../_shared/constants';
-import { VARIANT_FEEDS, INTEL_SOURCES, type ServerFeed } from './_feeds';
-import { classifyByKeyword, type ThreatLevel } from './_classifier';
+import { VARIANT_FEEDS, INTEL_SOURCES, type ServerFeed } from './_feeds.js';
+import { classifyByKeyword, type ThreatLevel } from './_classifier.js';
 import { getSourceTier } from '../../../_shared/source-tiers';
 import {
   STORY_TRACK_KEY,
@@ -27,8 +27,8 @@ import {
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
 
 const RSS_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
-import { isTransRelevant } from './_trans-filter';
-import { aiFilterTransRelevant } from './_trans-ai-filter';
+import { isTransRelevant } from './_trans-filter.js';
+import { aiFilterTransRelevant } from './_trans-ai-filter.js';
 
 const VALID_VARIANTS = new Set(['full', 'tech', 'finance', 'happy', 'commodity', 'trans']);
 const fallbackDigestCache = new Map<string, { data: ListFeedDigestResponse; ts: number }>();
@@ -85,6 +85,27 @@ interface ParsedItem {
   lang: string;
 }
 
+const HERO_CATEGORY_PRIORITY: Record<string, number> = {
+  healthcare: 12,
+  legal: 11,
+  "uk-press": 10,
+  mainstream: 9,
+  international: 8,
+  safety: 3,
+  community: 2,
+  wins: 1,
+};
+
+function heroScore(item: any, category: string): number {
+  const base = Number(item.importanceScore ?? 0);
+  const priority = HERO_CATEGORY_PRIORITY[category] ?? 0;
+
+  // Do not let low/medium safety stories dominate the digest hero.
+  if (category === "safety" && base < 35) return base - 20;
+
+  return base + priority;
+}
+
 function computeImportanceScore(
   level: ThreatLevel,
   source: string,
@@ -102,6 +123,62 @@ function computeImportanceScore(
     corroborationScore * SCORE_WEIGHTS.corroboration +
     recencyScore * SCORE_WEIGHTS.recency,
   );
+}
+
+const LIVE_FEED_MAX_AGE_MS = 45 * 24 * 60 * 60 * 1000;
+const FUTURE_SKEW_MS = 6 * 60 * 60 * 1000;
+
+function isBackfillSource(source: string): boolean {
+  return /\bbackfill\b/i.test(source);
+}
+
+function normaliseDedupeText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+[-–—]\s+[^-–—|]+$/g, '')
+    .replace(/\([^)]*(exclusive|video|watch)[^)]*\)/gi, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function liveItemDedupeKey(item: ParsedItem): string {
+  const link = String(item.link ?? '').trim().toLowerCase();
+
+  // Google News RSS links can repeat the same underlying item under different
+  // feed/source names, so title is the safer primary key for those.
+  if (link.includes('news.google.com/rss/articles/')) {
+    return `title:${normaliseDedupeText(item.title)}`;
+  }
+
+  return link
+    ? `link:${link}`
+    : `title:${normaliseDedupeText(item.title)}`;
+}
+
+function cleanLiveDigestItems(items: ParsedItem[]): ParsedItem[] {
+  const now = Date.now();
+  const seen = new Set<string>();
+
+  return items
+    .filter((item) => {
+      if (isBackfillSource(item.source)) return false;
+
+      const publishedAt = Number(item.publishedAt);
+      if (!Number.isFinite(publishedAt) || publishedAt <= 0) return false;
+      if (publishedAt > now + FUTURE_SKEW_MS) return false;
+      if (publishedAt < now - LIVE_FEED_MAX_AGE_MS) return false;
+
+      return true;
+    })
+    .filter((item) => {
+      const key = liveItemDedupeKey(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function createTimeoutLinkedController(parentSignal: AbortSignal): {
@@ -243,7 +320,7 @@ const KNOWN_TAGS = ['title', 'link', 'pubDate', 'published', 'updated'] as const
 for (const tag of KNOWN_TAGS) {
   TAG_REGEX_CACHE.set(tag, {
     // Safer regexes with specific character classes to avoid catastrophic backtracking.
-    cdata: new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i'),
+    cdata: new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*</${tag}>`, 'i'),
     plain: new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`, 'i'),
   });
 }
@@ -251,7 +328,7 @@ for (const tag of KNOWN_TAGS) {
 function extractTag(xml: string, tag: string): string {
   const cached = TAG_REGEX_CACHE.get(tag);
   // Fallback to cached or new regex (though all expected tags are in cache)
-  const cdataRe = cached?.cdata ?? new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i');
+  const cdataRe = cached?.cdata ?? new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*</${tag}>`, 'i');
   const plainRe = cached?.plain ?? new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`, 'i');
 
   // Input length limit for defense-in-depth against extremely large tags
@@ -577,7 +654,8 @@ async function buildDigest(variant: string, lang: string): Promise<ListFeedDiges
       items.sort((a, b) =>
         b.importanceScore - a.importanceScore || b.publishedAt - a.publishedAt,
       );
-      slicedByCategory.set(category, items.slice(0, MAX_ITEMS_PER_CATEGORY));
+      const dedupedItems = cleanLiveDigestItems(items);
+      slicedByCategory.set(category, dedupedItems.slice(0, MAX_ITEMS_PER_CATEGORY));
     }
 
     // Cross-category deduplication: if the same story (by titleHash) appears
@@ -668,7 +746,28 @@ async function buildDigest(variant: string, lang: string): Promise<ListFeedDiges
       };
     }
 
+    const hero = [...slicedByCategory.entries()]
+      .flatMap(([category, items]) => items.map(item => ({ item, category })))
+      .map(({ item, category }) => ({ item, category, score: heroScore(item, category) }))
+      .sort((a, b) =>
+        b.score - a.score ||
+        Number(b.item.publishedAt ?? 0) - Number(a.item.publishedAt ?? 0)
+      )[0];
+
     return {
+      hero: hero ? toProtoItem(hero.item, {
+        firstSeen: storyTracks.get(hero.item.titleHash!)?.firstSeen ?? now,
+        mentionCount: (storyTracks.get(hero.item.titleHash!)?.mentionCount ?? 0) + 1,
+        sourceCount: corroborationMap.get(hero.item.titleHash!)?.size ?? 1,
+        phase: derivePhase({
+          firstSeen: storyTracks.get(hero.item.titleHash!)?.firstSeen ?? now,
+          lastSeen: now,
+          mentionCount: (storyTracks.get(hero.item.titleHash!)?.mentionCount ?? 0) + 1,
+          sourceCount: corroborationMap.get(hero.item.titleHash!)?.size ?? 1,
+          currentScore: storyTracks.get(hero.item.titleHash!)?.currentScore ?? 0,
+          peakScore: storyTracks.get(hero.item.titleHash!)?.peakScore ?? 0,
+        }),
+      }) : undefined,
       categories,
       feedStatuses,
       generatedAt: new Date().toISOString(),

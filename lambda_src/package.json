@@ -2,7 +2,11 @@
   "name": "transmonitor-lambda-deps",
   "type": "module",
   "dependencies": {
-    "redis": "^4.7.0",
-    "fast-xml-parser": "^4.4.0"
+    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "fast-xml-parser": "^4.4.0",
+    "redis": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43"
   }
 }
