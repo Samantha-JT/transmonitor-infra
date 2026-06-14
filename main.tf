@@ -63,6 +63,7 @@ module "scheduler" {
 
 module "cloudflare" {
   source               = "./modules/cloudflare"
+  name_prefix          = local.name_prefix
   account_id           = var.cloudflare_account_id
   zone_id              = var.cloudflare_zone_id
   hostname             = var.hostname
