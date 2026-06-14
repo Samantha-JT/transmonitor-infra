@@ -25,7 +25,7 @@ const FEEDS = {
   legal: [
     { name: "Erin in the Morning", url: "https://www.erininthemorning.com/feed" },
     // DISABLED 2026-06-07: persistent 404/403 in Lambda logs: { name: "Trans Legislation Tracker", url: "https://translegislation.com/rss.xml" },
-    { name: "ACLU LGBT News", url: "https://www.aclu.org/issues/lgbtq-rights/feed" },
+    { name: "ACLU LGBT News", url: gn('(transgender OR "trans rights" OR "gender-affirming") site:aclu.org when:14d') },
     { name: "US Trans Legislation", url: gn('("gender-affirming care ban" OR "trans bill" OR "bathroom bill" OR "bathroom law" OR "drag ban") when:3d') },
     { name: "UK Trans Law", url: gnGB('("GRC" OR "Gender Recognition Act" OR "Cass Review" OR "Equality Act") UK when:3d') },
     { name: "EU Gender Recognition", url: gn('("gender self-determination" OR "Ley Trans" OR "Selbstbestimmungsgesetz") when:7d') },
