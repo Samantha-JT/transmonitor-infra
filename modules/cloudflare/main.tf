@@ -105,6 +105,15 @@ resource "cloudflare_ruleset" "rate_limit" {
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 output "hostname" { value = var.hostname }
+
+output "turnstile_sitekey" {
+  value = cloudflare_turnstile_widget.security.id
+}
+
+output "turnstile_secret" {
+  value     = cloudflare_turnstile_widget.security.secret
+  sensitive = true
+}
 # ── Security Worker ───────────────────────────────────────────────────────────
 # Add this to modules/cloudflare/main.tf
 #
@@ -151,6 +160,16 @@ resource "cloudflare_workers_script" "security" {
     text = "https://8soi33z3h9.execute-api.eu-west-1.amazonaws.com/security/score"
   }
 
+  plain_text_binding {
+    name = "TURNSTILE_SITEKEY"
+    text = cloudflare_turnstile_widget.security.id
+  }
+
+  secret_text_binding {
+    name = "TURNSTILE_SECRET"
+    text = cloudflare_turnstile_widget.security.secret
+  }
+
   secret_text_binding {
     name = "ORIGIN_VERIFY_SECRET"
     text = var.origin_verify_secret
@@ -181,8 +200,28 @@ resource "cloudflare_workers_route" "security_catchall" {
   script_name = cloudflare_workers_script.security.name
 }
 
+# ── Turnstile widget (managed challenge for the security worker) ───────────────
+resource "cloudflare_turnstile_widget" "security" {
+  account_id = var.account_id
+  name       = "${var.hostname} security challenge"
+  domains    = [var.hostname]
+  mode       = "managed"
+  region     = "world"
+}
+
+# Store the Cloudflare-generated secret in SSM (mirrors origin_verify_secret).
+# The secret originates here (it's a Cloudflare output), so it's stored from this
+# module rather than threaded through root, unlike root-sourced secrets.
+resource "aws_ssm_parameter" "turnstile_secret" {
+  name      = "/${var.name_prefix}/turnstile_secret"
+  type      = "SecureString"
+  value     = cloudflare_turnstile_widget.security.secret
+  overwrite = true
+}
+
 # ── New variables to add to variables section ─────────────────────────────────
 
+variable "name_prefix"       {}
 variable "cf_api_token"      { sensitive = true }
 variable "pushover_token"    { sensitive = true }
 variable "pushover_user"     { sensitive = true }
