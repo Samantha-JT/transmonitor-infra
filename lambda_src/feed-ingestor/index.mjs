@@ -51,7 +51,7 @@ const FEEDS = {
     { name: "HRC Violence Tracker", url: gn('site:hrc.org ("violence" OR "fatal" OR "transgender") when:30d') },
   ],
   "uk-press": [
-    { name: "BBC News", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:bbc.co.uk when:3d') },
+    { name: "BBC News", url: "https://feeds.bbci.co.uk/news/topics/cp7r8vgl2lgt/rss.xml" },
     { name: "The Guardian", url: "https://www.theguardian.com/society/transgender/rss" },
     { name: "The Independent", url: gnGB('(transgender OR "trans rights") site:independent.co.uk when:3d') },
     { name: "Sky News", url: gnGB('(transgender OR "trans rights") site:news.sky.com when:3d') },
