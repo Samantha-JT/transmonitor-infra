@@ -344,10 +344,44 @@ async function pushoverAlert({ action, ip, country, asn, asnOrg, score, reasons,
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function blockResponse(reason) {
-  return new Response(
-    JSON.stringify({ error: "Access denied", reason }),
-    { status: 403, headers: { "Content-Type": "application/json" } }
-  );
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access blocked \u2014 TransMonitor</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;background:#0d1117;color:#e6edf3;
+       display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:1.5rem}
+  .box{text-align:center;max-width:34rem}
+  .flag{font-size:2.5rem;line-height:1;margin-bottom:1rem}
+  h1{font-size:1.5rem;font-weight:700;margin:0 0 1rem}
+  p{color:#8b949e;font-size:.95rem;line-height:1.6;margin:0 0 1rem}
+  .human{background:#161b22;border:1px solid #30363d;border-radius:.6rem;padding:1.25rem 1.5rem;
+         margin:1.5rem 0;text-align:left}
+  .human strong{color:#e6edf3}
+  .bot{color:#6e7681;font-size:.85rem;font-style:italic;margin-top:1.5rem}
+  .ref{color:#484f58;font-size:.75rem;margin-top:2rem;font-family:ui-monospace,monospace}
+</style></head>
+<body><div class="box">
+  <div class="flag">\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f</div>
+  <h1>Well, this is awkward.</h1>
+  <p>Our overly-suspicious robot bouncer flagged your connection and shut the
+     door. It does this sometimes to perfectly lovely humans.</p>
+  <div class="human">
+    <p style="margin:0 0 .75rem"><strong>If you're a real person \u2014 this is probably a mistake, and we're sorry.</strong></p>
+    <p style="margin:0">Shared networks, VPNs, Tor and other privacy tools can trip the
+       filter \u2014 and those are exactly the things many of our readers rely on to stay
+       safe. The block clears on its own within 24 hours. If you're in a hurry, try
+       again from a different network, or with your VPN toggled, and you'll likely
+       sail straight through.</p>
+  </div>
+  <p class="bot">If, on the other hand, you're a bot scraping the site: respectfully,
+     transition to a better hobby. \ud83d\udc85</p>
+  <p class="ref">TransMonitor security \u00b7 ref: ${(reason || "policy").toString().slice(0, 80)}</p>
+</div></body></html>`;
+  return new Response(html, {
+    status: 403,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }
 
 // ── Turnstile challenge page ────────────────────────────────────────────────
