@@ -351,15 +351,16 @@ function blockResponse(reason) {
 <style>
   body{font-family:system-ui,-apple-system,sans-serif;background:#0d1117;color:#e6edf3;
        display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:1.5rem}
-  .box{text-align:center;max-width:34rem}
-  .flag{font-size:2.5rem;line-height:1;margin-bottom:1rem}
-  h1{font-size:1.5rem;font-weight:700;margin:0 0 1rem}
-  p{color:#8b949e;font-size:.95rem;line-height:1.6;margin:0 0 1rem}
-  .human{background:#161b22;border:1px solid #30363d;border-radius:.6rem;padding:1.25rem 1.5rem;
-         margin:1.5rem 0;text-align:left}
-  .human strong{color:#e6edf3}
-  .bot{color:#6e7681;font-size:.85rem;font-style:italic;margin-top:1.5rem}
-  .ref{color:#484f58;font-size:.75rem;margin-top:2rem;font-family:ui-monospace,monospace}
+  .box{text-align:center;max-width:40rem}
+  .flag{font-size:3rem;line-height:1;margin-bottom:1.25rem}
+  h1{font-size:1.875rem;font-weight:700;margin:0 0 1.25rem}
+  p{color:#9da7b3;font-size:1.15rem;line-height:1.7;margin:0 0 1rem}
+  .human{background:#161b22;border:1px solid #30363d;border-radius:.6rem;padding:1.5rem 1.75rem;
+         margin:1.75rem 0;text-align:left}
+  .human strong{color:#e6edf3;font-size:1.2rem}
+  .human p{font-size:1.1rem}
+  .bot{color:#7d8590;font-size:1rem;font-style:italic;margin-top:1.75rem}
+  .ref{color:#586069;font-size:.85rem;margin-top:2rem;font-family:ui-monospace,monospace}
 </style></head>
 <body><div class="box">
   <div class="flag">\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f</div>
