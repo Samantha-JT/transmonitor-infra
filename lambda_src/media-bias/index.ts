@@ -108,14 +108,11 @@ export async function ingestArticle(
 }
 
 async function handleGetSources(redis: ReturnType<typeof createClient>) {
-  const indexedDomains = await redis.sMembers(biasIndexKey());
 
-  // Always include every configured source, even if it has not yet been scored.
-  // Also include any historic Redis-only domains not currently in SOURCE_REGISTRY.
-  const domains = Array.from(new Set([
-    ...Object.keys(SOURCE_REGISTRY),
-    ...indexedDomains,
-  ]));
+  // SOURCE_REGISTRY is the source of truth for monitored sources. We do NOT
+  // union with the Redis bias index, so removing a source from the registry
+  // removes it from the monitor even if it still has cached scored articles.
+  const domains = Object.keys(SOURCE_REGISTRY);
 
   const sources = await Promise.all(
     domains.map(async (domain) => {
