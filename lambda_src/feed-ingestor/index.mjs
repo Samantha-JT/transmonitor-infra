@@ -87,6 +87,17 @@ const FEEDS = {
 const SAFETY_KEYWORDS = ["murdered","killed","stabbed","shot","attacked","assault","hate crime","violence","fatal","death","tdor","trans day of remembrance"];
 const RIGHTS_KEYWORDS = ["ban","banned","outlawed","criminalised","criminalized","bathroom bill","bathroom law","anti-trans","drag ban","gender ideology"];
 const POSITIVE_KEYWORDS = ["victory","wins","elected","landmark","milestone","first trans","overturns","blocks ban","upholds","celebrates","representation","awarded"];
+// Trans-relevance gate for the media-bias queue. site: feeds (Daily Mail, Express,
+// National Review, etc.) return each outlet's GENERAL output, not just trans coverage,
+// so without this the bias queue saturates with off-topic noise (puppies, UFOs, village
+// tourism) that wastes Bedrock relevance-checks. Title-level keyword gate keeps obvious
+// junk out of the queue; Bedrock still does the precise relevance call on what passes.
+// NOTE: gates ONLY the bias queue — the news-feed digest is unaffected.
+const TRANS_TERMS = ["transgender","trans woman","trans women","trans man","trans men","trans people","trans rights","trans kid","trans child","trans youth","nonbinary","non-binary","gender-affirming","gender affirming","gender identity","gender recognition","gender dysphoria","gender clinic","puberty blocker","cass review","gender critical","gender ideology","cisgender","two-spirit","detransition","trans healthcare","trans athlete","drag ban","bathroom bill","\"trans\"","intersex"];
+function isTransRelevantTitle(title) {
+  const t = (title ?? "").toLowerCase();
+  return TRANS_TERMS.some(term => t.includes(term));
+}
 
 function classifyItem(title) {
   const t = title.toLowerCase();
@@ -241,6 +252,7 @@ export const handler = async () => {
       for (const item of deduped) {
         if (!item.link) continue;
         if (!canResolveBiasDomain({ link: item.link, title: item.title, source: item.source })) continue;
+        if (!isTransRelevantTitle(item.title)) continue; // keep off-topic noise out of the bias queue
         refs.push(JSON.stringify({
           url: item.link,
           title: item.title,
