@@ -131,3 +131,65 @@ systemctl enable hansard-db-upload.timer
 systemctl enable hansard-scraper-update.timer
 systemctl start hansard-db-upload.timer
 systemctl start hansard-scraper-update.timer
+
+# ── Chromium / Playwright runtime (for the article archiver) ───────────────────
+# AL2023 is unsupported by `playwright install-deps` (assumes apt), so the
+# Chromium system libraries are installed explicitly via dnf. Verified-working
+# set from the running instance (ldd-confirmed).
+dnf install -y \
+  python3.11 python3.11-pip \
+  nss atk at-spi2-atk cups-libs libdrm libxkbcommon \
+  libXcomposite libXdamage libXext libXfixes libXrandr libXrender libXtst \
+  libX11 libX11-xcb libxcb libXi libXau libxshmfence \
+  mesa-libgbm mesa-dri-drivers alsa-lib pango cairo || true
+
+# Playwright + boto3 + redis AS ssm-user → /home/ssm-user/.local and
+# Chromium → /home/ssm-user/.cache/ms-playwright (the path the archiver expects).
+sudo -u ssm-user /usr/bin/python3.11 -m pip install --user playwright boto3 redis || true
+# Browser binary only — NOT --with-deps (install-deps broken on AL2023).
+sudo -u ssm-user /usr/bin/python3.11 -m playwright install chromium || true
+
+# ── Swap (Chromium full-page screenshots spike memory on a 1.8GB box) ──────────
+if [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# ── Archiver code (fetched unconditionally so repo edits propagate on rebuild) ──
+aws s3 cp "s3://$ARCHIVE_BUCKET/bootstrap/archiver.py" "$SCRAPER_DIR/archiver.py" --region "$AWS_REGION" || true
+chown ssm-user:ssm-user "$SCRAPER_DIR/archiver.py"
+
+# ── Archiver systemd service + timer (screenshot + text capture, every 3h) ─────
+cat > /etc/systemd/system/transmonitor-archiver.service <<'EOF_SERVICE'
+[Unit]
+Description=TransMonitor article archiver — screenshot + text capture to S3
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ssm-user
+WorkingDirectory=/home/ssm-user/hansard-scraper
+ExecStart=/usr/bin/python3.11 archiver.py run
+TimeoutStartSec=1800
+EOF_SERVICE
+
+cat > /etc/systemd/system/transmonitor-archiver.timer <<'EOF_TIMER'
+[Unit]
+Description=Run TransMonitor archiver every 3 hours
+
+[Timer]
+OnCalendar=*-*-* 00/3:15:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
+EOF_TIMER
+
+systemctl daemon-reload
+systemctl enable transmonitor-archiver.timer
+systemctl start transmonitor-archiver.timer
