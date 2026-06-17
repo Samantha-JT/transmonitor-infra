@@ -189,8 +189,20 @@ def upload_to_s3(s3_client, image_bytes: bytes, key: str, tags: dict) -> bool:
         )
         return True
     except Exception as e:
-        print(f"    S3 upload failed: {e}")
-        return False
+        # S3 object tags have strict value rules; some titles produce invalid
+        # tag values (InvalidTag). The metadata is redundant (held in the SQLite
+        # index + the S3 manifest), so never let tagging block the capture from
+        # being stored — retry without tags.
+        print(f"    tagged upload failed ({e}); retrying without tags")
+        try:
+            s3_client.put_object(
+                Bucket=ARCHIVE_BUCKET, Key=key, Body=image_bytes,
+                ContentType='image/jpeg',
+            )
+            return True
+        except Exception as e2:
+            print(f"    S3 upload failed: {e2}")
+            return False
 
 # ── Main run ──────────────────────────────────────────────────────────────────
 def cmd_run(args):
@@ -301,7 +313,45 @@ def cmd_run(args):
     total = conn.execute("SELECT COUNT(*) FROM archive WHERE status='ok'").fetchone()[0]
     failed = conn.execute("SELECT COUNT(*) FROM archive WHERE status='failed' OR status='upload_failed'").fetchone()[0]
     print(f"\n✅ Archive complete — {total} screenshots stored, {failed} failed")
+    write_manifest(conn, s3)
     conn.close()
+
+def write_manifest(conn, s3_client):
+    """Write a lookup manifest to S3 so the archive-lookup Lambda can map an
+    article URL (by its url_hash) to stored snapshot/text keys without reaching
+    this box. Only 'ok' rows are included. Keyed by url_hash (matches url_hash()
+    used for the S3 object keys)."""
+    rows = conn.execute("""
+        SELECT id, url, domain, s3_key, text_s3_key, captured_at,
+               image_sha256, text_sha256, text_len
+        FROM archive WHERE status='ok' AND s3_key IS NOT NULL
+    """).fetchall()
+    manifest = {}
+    for (uid, url, domain, s3_key, text_key, captured_at,
+         img_sha, text_sha, text_len) in rows:
+        manifest[uid] = {
+            "url": url,
+            "domain": domain,
+            "screenshot_key": s3_key,
+            "text_key": text_key,
+            "captured_at": captured_at,
+            "image_sha256": img_sha,
+            "text_sha256": text_sha,
+            "text_len": text_len or 0,
+        }
+    body = json.dumps({
+        "generated_at": datetime.utcnow().isoformat(),
+        "count": len(manifest),
+        "entries": manifest,
+    }).encode("utf-8")
+    try:
+        s3_client.put_object(
+            Bucket=ARCHIVE_BUCKET, Key="index/manifest.json",
+            Body=body, ContentType="application/json",
+        )
+        print(f"  manifest written: {len(manifest)} entries -> index/manifest.json")
+    except Exception as e:
+        print(f"  manifest write failed: {e}")
 
 def cmd_stats(args):
     if not DB_PATH.exists():
