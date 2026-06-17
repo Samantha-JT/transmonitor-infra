@@ -7,6 +7,7 @@ variable "private_subnet_ids" {
 variable "lambda_sg_id" {}
 variable "redis_endpoint" {}
 variable "digest_bucket_name" {}
+variable "archive_bucket_name" {}
 variable "ssm_prefix" {}
 variable "origin_verify_secret" {
   sensitive = true
@@ -32,6 +33,7 @@ locals {
   common_env = {
     REDIS_URL            = "rediss://${var.redis_endpoint}:6379"
     DIGEST_BUCKET        = var.digest_bucket_name
+    ARCHIVE_BUCKET       = var.archive_bucket_name
     SSM_PREFIX           = var.ssm_prefix
     NODE_ENV             = "production"
     VARIANT              = "trans"
@@ -101,6 +103,14 @@ resource "aws_iam_role_policy" "lambda_permissions" {
         Resource = [
           "arn:aws:s3:::${var.digest_bucket_name}",
           "arn:aws:s3:::${var.digest_bucket_name}/*"
+        ]
+      },
+      {
+        Sid    = "ArchiveBucketWrite"
+        Effect = "Allow"
+        Action = ["s3:PutObject"]
+        Resource = [
+          "arn:aws:s3:::${var.archive_bucket_name}/pending/*"
         ]
       },
       {

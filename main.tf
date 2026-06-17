@@ -37,6 +37,7 @@ module "lambdas" {
   lambda_sg_id         = module.cache.lambda_sg_id
   redis_endpoint       = module.cache.endpoint
   digest_bucket_name   = module.static_site.digest_bucket_name
+  archive_bucket_name  = module.scraper.archive_bucket_name
   ssm_prefix           = module.ssm.prefix
   origin_verify_secret = var.origin_verify_secret
   pushover_token       = var.pushover_token

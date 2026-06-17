@@ -237,6 +237,31 @@ export const handler = async () => {
     ContentType: "application/json",
   }));
   console.log(`feed-ingestor: wrote ${deduped.length} items`);
+  // ── Archive producer ───────────────────────────────────────────────────
+  // Write current article list to the archive bucket so the EC2 archiver
+  // (Playwright screenshot + text) captures them. Maps ingestor fields to the
+  // shape archiver.py reads (url<-link, publishedAt<-pubDate). Non-fatal:
+  // archival must never break ingest.
+  try {
+    const pending = deduped
+      .filter((item) => item.link)
+      .map((item) => ({
+        url: item.link,
+        title: item.title,
+        source: item.source,
+        category: item.classification,
+        publishedAt: item.pubDate,
+      }));
+    await s3.send(new PutObjectCommand({
+      Bucket: process.env.ARCHIVE_BUCKET,
+      Key: "pending/articles.json",
+      Body: JSON.stringify(pending),
+      ContentType: "application/json",
+    }));
+    console.log(`feed-ingestor: wrote ${pending.length} pending archive refs`);
+  } catch (e) {
+    console.warn("feed-ingestor: archive producer failed (non-fatal):", e.message);
+  }
 
   try {
     const redis = await getRedis();
