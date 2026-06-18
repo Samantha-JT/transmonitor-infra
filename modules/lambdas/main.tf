@@ -490,10 +490,8 @@ resource "aws_lambda_function" "archive_lookup" {
   filename         = data.archive_file.archive_lookup.output_path
   source_code_hash = data.archive_file.archive_lookup.output_base64sha256
   environment { variables = local.common_env }
-  vpc_config {
-    subnet_ids         = local.vpc_config.subnet_ids
-    security_group_ids = local.vpc_config.security_group_ids
-  }
+  # No vpc_config: this function only needs S3 (manifest + presigning), not Redis.
+  # Staying out of the VPC avoids the ~800ms ENI cold-start penalty.
   tracing_config { mode = "Active" }
 }
 

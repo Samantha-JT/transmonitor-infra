@@ -1,6 +1,5 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createClient } from 'redis';
 import { createHash } from 'crypto';
 
 const CORS_HEADERS = {
@@ -12,8 +11,7 @@ const CORS_HEADERS = {
 const ARCHIVE_BUCKET = process.env.ARCHIVE_BUCKET as string;
 const REGION = process.env.AWS_REGION ?? 'eu-west-1';
 const MANIFEST_KEY = 'index/manifest.json';
-const MANIFEST_CACHE_KEY = 'archive:manifest:v1';
-const MANIFEST_CACHE_TTL = 120;        // seconds — manifest changes at most every 3h
+const MANIFEST_CACHE_TTL_MS = 120_000;  // module-scope cache: manifest changes at most every 3h
 const PRESIGN_TTL = 3600;              // 1h signed-URL validity
 const GLACIER_DAYS = 90;               // matches the S3 lifecycle transition
 
@@ -40,21 +38,17 @@ interface Manifest {
   entries: Record<string, ManifestEntry>;
 }
 
-async function loadManifest(redis: ReturnType<typeof createClient>): Promise<Manifest> {
-  // Try Redis cache first.
-  try {
-    const cached = await redis.get(MANIFEST_CACHE_KEY);
-    if (cached) return JSON.parse(cached) as Manifest;
-  } catch { /* fall through to S3 */ }
+let _manifestCache: { data: Manifest; ts: number } | null = null;
 
+async function loadManifest(): Promise<Manifest> {
+  // Module-scope cache persists across warm invocations on the same container.
+  if (_manifestCache && (Date.now() - _manifestCache.ts) < MANIFEST_CACHE_TTL_MS) {
+    return _manifestCache.data;
+  }
   const obj = await s3.send(new GetObjectCommand({ Bucket: ARCHIVE_BUCKET, Key: MANIFEST_KEY }));
   const body = await obj.Body!.transformToString();
   const manifest = JSON.parse(body) as Manifest;
-
-  try {
-    await redis.set(MANIFEST_CACHE_KEY, body, { EX: MANIFEST_CACHE_TTL });
-  } catch { /* cache write best-effort */ }
-
+  _manifestCache = { data: manifest, ts: Date.now() };
   return manifest;
 }
 
@@ -86,33 +80,34 @@ export const handler = async (event: any) => {
   // Cap to protect the function from oversized requests.
   urls = urls.slice(0, 200);
 
-  let redis: ReturnType<typeof createClient> | null = null;
   try {
-    redis = createClient({ url: process.env.REDIS_URL });
-    await redis.connect().catch(() => { redis = null; });
+    const manifest = await loadManifest();
 
-    const manifest = await loadManifest(redis ?? ({ get: async () => null, set: async () => null } as any));
-
-    const result: Record<string, any> = {};
-    for (const url of urls) {
+    // Presign all warm hits in parallel rather than sequentially.
+    const entries = await Promise.all(urls.map(async (url) => {
       const entry = manifest.entries[urlHash(url)];
-      if (!entry) { result[url] = { archived: false }; continue; }
+      if (!entry) return [url, { archived: false }] as const;
       if (isCold(entry.captured_at)) {
-        result[url] = { archived: true, cold: true, captured_at: entry.captured_at, domain: entry.domain };
-        continue;
+        return [url, { archived: true, cold: true, captured_at: entry.captured_at, domain: entry.domain }] as const;
       }
-      result[url] = {
+      const [screenshot, text] = await Promise.all([
+        presign(entry.screenshot_key),
+        entry.text_key ? presign(entry.text_key) : Promise.resolve(null),
+      ]);
+      return [url, {
         archived: true,
         cold: false,
         captured_at: entry.captured_at,
         domain: entry.domain,
-        screenshot: await presign(entry.screenshot_key),
-        text: entry.text_key ? await presign(entry.text_key) : null,
+        screenshot,
+        text,
         text_len: entry.text_len,
         image_sha256: entry.image_sha256,
         text_sha256: entry.text_sha256,
-      };
-    }
+      }] as const;
+    }));
+
+    const result: Record<string, any> = Object.fromEntries(entries);
 
     return {
       statusCode: 200,
@@ -125,7 +120,5 @@ export const handler = async (event: any) => {
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: (err as Error).message }),
     };
-  } finally {
-    if (redis) await redis.disconnect().catch(() => {});
   }
 };
