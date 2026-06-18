@@ -114,6 +114,15 @@ resource "aws_iam_role_policy" "lambda_permissions" {
         ]
       },
       {
+        Sid    = "ArchiveBucketRead"
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "arn:aws:s3:::${var.archive_bucket_name}/screenshots/*",
+          "arn:aws:s3:::${var.archive_bucket_name}/index/*"
+        ]
+      },
+      {
         Sid    = "SSMParameterRead"
         Effect = "Allow"
         Action = ["ssm:GetParameter", "ssm:GetParametersByPath"]
@@ -155,6 +164,7 @@ locals {
     "${var.name_prefix}-sentiment-stats",
     "${var.name_prefix}-trans-rights",
     "${var.name_prefix}-tmm-data",
+    "${var.name_prefix}-archive-lookup",
     "${var.name_prefix}-rss-proxy",
     "${var.name_prefix}-health",
   ]
@@ -427,6 +437,7 @@ output "invoke_arns" {
     trans_rights    = aws_lambda_function.trans_rights.invoke_arn
     tmm_data        = aws_lambda_function.tmm_data.invoke_arn
     media_bias      = aws_lambda_function.media_bias.invoke_arn
+    archive_lookup  = aws_lambda_function.archive_lookup.invoke_arn
     rss_proxy       = aws_lambda_function.rss_proxy.invoke_arn
     health          = aws_lambda_function.health.invoke_arn
     security_score  = aws_lambda_function.security_score.invoke_arn
@@ -443,6 +454,7 @@ output "function_names" {
     trans_rights    = aws_lambda_function.trans_rights.function_name
     tmm_data        = aws_lambda_function.tmm_data.function_name
     media_bias      = aws_lambda_function.media_bias.function_name
+    archive_lookup  = aws_lambda_function.archive_lookup.function_name
     rss_proxy       = aws_lambda_function.rss_proxy.function_name
     health          = aws_lambda_function.health.function_name
     security_score  = aws_lambda_function.security_score.function_name
@@ -455,10 +467,34 @@ output "feed_ingestor_name" { value = aws_lambda_function.feed_ingestor.function
 output "media_bias_arn" { value = aws_lambda_function.media_bias.arn }
 output "media_bias_name" { value = aws_lambda_function.media_bias.function_name }
 
+data "archive_file" "archive_lookup" {
+  type        = "zip"
+  source_dir  = "${path.root}/lambda_src/archive-lookup/dist"
+  output_path = "${path.root}/.terraform/lambda_zips/archive-lookup.zip"
+}
+
 data "archive_file" "media_bias" {
   type        = "zip"
   source_dir  = "${path.root}/lambda_src/media-bias/dist"
   output_path = "${path.root}/.terraform/lambda_zips/media-bias.zip"
+}
+
+resource "aws_lambda_function" "archive_lookup" {
+  function_name    = "${var.name_prefix}-archive-lookup"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "nodejs22.x"
+  architectures    = ["arm64"]
+  timeout          = 30
+  memory_size      = 256
+  filename         = data.archive_file.archive_lookup.output_path
+  source_code_hash = data.archive_file.archive_lookup.output_base64sha256
+  environment { variables = local.common_env }
+  vpc_config {
+    subnet_ids         = local.vpc_config.subnet_ids
+    security_group_ids = local.vpc_config.security_group_ids
+  }
+  tracing_config { mode = "Active" }
 }
 
 resource "aws_lambda_function" "media_bias" {

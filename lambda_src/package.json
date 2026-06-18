@@ -3,6 +3,7 @@
   "type": "module",
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.1072.0",
     "fast-xml-parser": "^4.4.0",
     "redis": "^4.7.0"
   },
