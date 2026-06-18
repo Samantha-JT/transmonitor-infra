@@ -29,6 +29,56 @@ const WHITELISTED_IPS = new Set([
   "84.247.40.149", // home (dynamic — may go stale)
 ]);
 
+// ── Cookie-based clearance (IP-independent) ────────────────────────────
+// Clearance keyed on IP breaks for dynamic residential IPs: the user is
+// re-challenged on every IP rotation. A signed cookie travels with the browser
+// regardless of IP, so one solved challenge clears the visitor for its TTL.
+//
+// GDPR/ePrivacy: tm_cleared is a STRICTLY NECESSARY security cookie (bot-
+// challenge clearance). It sets no tracking/analytics/profiling data, is
+// HttpOnly + HMAC-signed, and is required to deliver the service the user
+// requested. Per ICO/EDPB guidance this category is exempt from consent — no
+// cookie banner required. (Functionally equivalent to Cloudflare's own
+// cf_clearance cookie.) See privacy policy entry for tm_cleared.
+const CLEARANCE_COOKIE = "tm_cleared";
+const CLEARANCE_TTL_SECS = 7 * 86400;   // 7 days
+
+function b64url(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function signClearance(value, secret) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return b64url(sig);
+}
+
+async function makeClearanceCookie(secret) {
+  const value = String(Date.now() + CLEARANCE_TTL_SECS * 1000);  // expiry ms
+  const sig = await signClearance(value, secret);
+  return `${value}.${sig}`;
+}
+
+async function verifyClearanceCookie(cookieHeader, secret) {
+  if (!cookieHeader || !secret) return false;
+  const m = cookieHeader.match(new RegExp(CLEARANCE_COOKIE + "=([^;]+)"));
+  if (!m) return false;
+  const dot = m[1].lastIndexOf(".");
+  if (dot < 0) return false;
+  const value = m[1].slice(0, dot);
+  const sig = m[1].slice(dot + 1);
+  if (!/^\d+$/.test(value) || Number(value) < Date.now()) return false;  // expired/malformed
+  const expected = await signClearance(value, secret);
+  if (sig.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
 const THRESHOLDS = {
   RATE_LIMIT_WINDOW_SECS: 300,
   RATE_LIMIT_BLOCK:       100,
@@ -101,6 +151,13 @@ export default {
       earlyPath.startsWith("/assets/") ||
       /\.(?:js|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot)$/i.test(earlyPath)
     ) {
+      return env.API_PROXY ? env.API_PROXY.fetch(request) : fetch(request);
+    }
+
+    // ── Fast path: valid clearance cookie (IP-independent) ───────────────
+    // A browser that solved a Turnstile challenge carries a signed tm_cleared
+    // cookie; honour it regardless of the (possibly rotated) source IP.
+    if (await verifyClearanceCookie(request.headers.get("Cookie"), env.ORIGIN_VERIFY_SECRET)) {
       return env.API_PROXY ? env.API_PROXY.fetch(request) : fetch(request);
     }
 
@@ -474,8 +531,12 @@ async function handleTurnstileVerify(request, env, ip) {
       env.SECURITY_KV.put(`ip:${ip}:cleared`, "1", { expirationTtl: 3600 }),
       env.SECURITY_KV.delete(`ip:${ip}:count`),
     ]);
+    const clearanceCookie = await makeClearanceCookie(env.ORIGIN_VERIFY_SECRET);
     return new Response(JSON.stringify({ success: true }),
-      { headers: { "Content-Type": "application/json" } });
+      { headers: {
+          "Content-Type": "application/json",
+          "Set-Cookie": `${CLEARANCE_COOKIE}=${clearanceCookie}; Path=/; Max-Age=${CLEARANCE_TTL_SECS}; HttpOnly; Secure; SameSite=Lax`,
+        } });
   }
   return new Response(JSON.stringify({ success: false, error: "challenge failed" }),
     { status: 403, headers: { "Content-Type": "application/json" } });
