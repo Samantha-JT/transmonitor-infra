@@ -48,6 +48,18 @@ COOKIE_SELECTORS = [
     'button:has-text("Got it")',
     'button:has-text("OK")',
     'button:has-text("Agree")',
+    'button[title="Accept"]',
+    'button[title="Accept all"]',
+    '.message-component button[title*="Accept"]',
+    'button[aria-label="Accept all"]',
+    '.qc-cmp2-summary-buttons button[mode="primary"]',
+    '#didomi-notice-agree-button',
+    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+    '#CybotCookiebotDialogBodyButtonAccept',
+    '#truste-consent-button',
+    'button:has-text("Accept All")',
+    'button:has-text("I Accept")',
+    'button:has-text("Allow all")',
 ]
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -98,16 +110,33 @@ def get_pending_urls():
         return []
 
 # ── Screenshot ────────────────────────────────────────────────────────────────
-def dismiss_cookies(page):
+def _try_dismiss_in(frame):
     for selector in COOKIE_SELECTORS:
         try:
-            el = page.locator(selector).first
-            if el.is_visible(timeout=1000):
+            el = frame.locator(selector).first
+            if el.is_visible(timeout=500):
                 el.click(timeout=2000)
-                page.wait_for_timeout(500)
-                break
+                return True
         except Exception:
             continue
+    return False
+
+def dismiss_cookies(page):
+    # Main frame + every child frame (Sourcepoint et al. use a cross-origin
+    # iframe the main-frame locators can't see). Twice, for second prompts.
+    for _ in range(2):
+        clicked = _try_dismiss_in(page)
+        for fr in page.frames:
+            if fr == page.main_frame:
+                continue
+            try:
+                if _try_dismiss_in(fr):
+                    clicked = True
+            except Exception:
+                continue
+        page.wait_for_timeout(500)
+        if not clicked:
+            break
 
 def extract_text(page):
     """Readable text from the loaded page. Prefer article/main, fall back to body.
@@ -178,9 +207,9 @@ def capture_url(page, url: str):
         if real_url != url:
             print(f"    resolved GN -> {real_url[:70]}")
         page.goto(real_url, wait_until='domcontentloaded', timeout=NAVIGATE_TIMEOUT)
-        page.wait_for_timeout(2000)  # let JS render
+        page.wait_for_timeout(3500)  # let JS + CMP consent iframe render
         dismiss_cookies(page)
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(1200)  # let the banner animate out before capture
 
         text = extract_text(page)
 
