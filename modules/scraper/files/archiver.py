@@ -27,7 +27,7 @@ AWS_REGION      = 'eu-west-1'
 SCREENSHOT_W    = 1280
 MAX_SCROLL_H    = 12_000   # cap capture height (px) to bound Chromium memory on tall pages
 REQUEST_TIMEOUT = 20_000   # ms
-NAVIGATE_TIMEOUT= 25_000   # ms
+NAVIGATE_TIMEOUT= 45_000   # ms (raised: real publisher pages are ad-heavy/slow)
 
 # Cookie banner selectors to auto-dismiss
 COOKIE_SELECTORS = [
@@ -154,6 +154,28 @@ def extract_text(page):
 
 GN_CONSENT_COOKIE = "CONSENT=YES+cb.20231231-07-p0.en+FX+410; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg"
 
+import time as _time
+_last_gn_call = [0.0]  # module-level throttle clock
+
+def _urlopen_retry(req, timeout=20, tries=3):
+    """urlopen with retry on transient 503/429 (Google throttles batchexecute
+    under rapid back-to-back calls). Also paces calls ~1.2s apart to stay under
+    the rate limit in the first place."""
+    import urllib.request, urllib.error
+    for attempt in range(tries):
+        # pace: ensure >=1.2s since the previous GN call
+        gap = _time.time() - _last_gn_call[0]
+        if gap < 1.2:
+            _time.sleep(1.2 - gap)
+        _last_gn_call[0] = _time.time()
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code in (503, 429) and attempt < tries - 1:
+                _time.sleep(2 * (attempt + 1))  # 2s, 4s backoff
+                continue
+            raise
+
 def resolve_google_news(url: str) -> str:
     """Resolve a news.google.com/rss/articles/ URL to the real publisher URL via
     Google's batchexecute endpoint. Returns the resolved URL, or the original URL
@@ -171,7 +193,7 @@ def resolve_google_news(url: str) -> str:
     ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": ua, "Cookie": GN_CONSENT_COOKIE})
-        html = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+        html = _urlopen_retry(req).read().decode("utf-8", "replace")
         sg = re.search(r'data-n-a-sg="([^"]+)"', html)
         ts = re.search(r'data-n-a-ts="([^"]+)"', html)
         if not (sg and ts):
@@ -190,7 +212,7 @@ def resolve_google_news(url: str) -> str:
             headers={"User-Agent": ua, "Cookie": GN_CONSENT_COOKIE,
                      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
         )
-        resp = urllib.request.urlopen(req2, timeout=20).read().decode("utf-8", "replace")
+        resp = _urlopen_retry(req2).read().decode("utf-8", "replace")
         urls = re.findall(r'(https?://(?!news\.google|www\.google|consent\.google)[^\\"\s]+)', resp)
         if urls:
             return urls[0]
@@ -206,7 +228,7 @@ def capture_url(page, url: str):
         real_url = resolve_google_news(url)
         if real_url != url:
             print(f"    resolved GN -> {real_url[:70]}")
-        page.goto(real_url, wait_until='domcontentloaded', timeout=NAVIGATE_TIMEOUT)
+        page.goto(real_url, wait_until='commit', timeout=NAVIGATE_TIMEOUT)
         page.wait_for_timeout(3500)  # let JS + CMP consent iframe render
         dismiss_cookies(page)
         page.wait_for_timeout(1200)  # let the banner animate out before capture
@@ -407,12 +429,15 @@ def write_manifest(conn, s3_client):
     used for the S3 object keys)."""
     rows = conn.execute("""
         SELECT id, url, domain, s3_key, text_s3_key, captured_at,
-               image_sha256, text_sha256, text_len
+               image_sha256, text_sha256, text_len, file_size_bytes
         FROM archive WHERE status='ok' AND s3_key IS NOT NULL
     """).fetchall()
     manifest = {}
+    gn_sizes = []  # capture sizes for GN-resolved URLs, for resolver-health check
     for (uid, url, domain, s3_key, text_key, captured_at,
-         img_sha, text_sha, text_len) in rows:
+         img_sha, text_sha, text_len, file_size_bytes) in rows:
+        if "news.google.com" in (url or ""):
+            gn_sizes.append(file_size_bytes or 0)
         manifest[uid] = {
             "url": url,
             "domain": domain,
@@ -423,6 +448,21 @@ def write_manifest(conn, s3_client):
             "text_sha256": text_sha,
             "text_len": text_len or 0,
         }
+    # GN-resolver health check: GN URLs should resolve to real publisher pages
+    # (hundreds of KB+). If most GN captures are block-page-sized (~32KB), the
+    # batchexecute resolver has likely broken (Google changed the format/cookie)
+    # and we're silently capturing consent pages again. Loud warning, no failure.
+    BLOCK_PAGE_MAX = 60_000  # bytes; real articles far exceed this, block pages ~32KB
+    if gn_sizes:
+        small = sum(1 for sz in gn_sizes if sz < BLOCK_PAGE_MAX)
+        pct = 100 * small / len(gn_sizes)
+        if pct > 50:
+            print(f"⚠️  GN-RESOLVER HEALTH: {small}/{len(gn_sizes)} ({pct:.0f}%) of Google "
+                  f"News captures are block-page-sized (<{BLOCK_PAGE_MAX//1000}KB). The "
+                  f"batchexecute resolver may be BROKEN — check resolve_google_news / consent cookie.")
+        else:
+            print(f"  GN-resolver health OK: {len(gn_sizes)-small}/{len(gn_sizes)} GN captures are real-sized")
+
     body = json.dumps({
         "generated_at": datetime.utcnow().isoformat(),
         "count": len(manifest),
