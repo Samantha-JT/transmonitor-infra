@@ -123,12 +123,61 @@ def extract_text(page):
             continue
     return ''
 
+GN_CONSENT_COOKIE = "CONSENT=YES+cb.20231231-07-p0.en+FX+410; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg"
+
+def resolve_google_news(url: str) -> str:
+    """Resolve a news.google.com/rss/articles/ URL to the real publisher URL via
+    Google's batchexecute endpoint. Returns the resolved URL, or the original URL
+    on any failure (so capture still attempts something). The manifest is keyed on
+    the ORIGINAL gn url regardless; only the captured content uses the resolved url.
+    Reverse-engineered RPC; may break if Google changes the format — failures fall
+    back to the original url (capturing the GN consent page, the prior behaviour)."""
+    import urllib.request, urllib.parse
+    if "news.google.com" not in url:
+        return url
+    m = re.search(r'/articles/([^?]+)', url)
+    if not m:
+        return url
+    art_id = m.group(1)
+    ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": ua, "Cookie": GN_CONSENT_COOKIE})
+        html = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+        sg = re.search(r'data-n-a-sg="([^"]+)"', html)
+        ts = re.search(r'data-n-a-ts="([^"]+)"', html)
+        if not (sg and ts):
+            return url
+        inner = json.dumps([
+            "garturlreq",
+            [["X","X",["X","X"],None,None,1,1,"US:en",None,1,None,None,None,None,None,0,1],
+             "X","X",1,[1,1,1],1,1,None,0,0,None,0],
+            art_id, int(ts.group(1)), sg.group(1)
+        ])
+        freq = json.dumps([[["Fbv4je", inner, None, "generic"]]])
+        body = urllib.parse.urlencode({"f.req": freq}).encode()
+        req2 = urllib.request.Request(
+            "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+            data=body,
+            headers={"User-Agent": ua, "Cookie": GN_CONSENT_COOKIE,
+                     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+        )
+        resp = urllib.request.urlopen(req2, timeout=20).read().decode("utf-8", "replace")
+        urls = re.findall(r'(https?://(?!news\.google|www\.google|consent\.google)[^\\"\s]+)', resp)
+        if urls:
+            return urls[0]
+    except Exception as e:
+        print(f"    GN resolve failed ({e}); using original url")
+    return url
+
 def capture_url(page, url: str):
     """Returns (image_bytes, text) for the page, or (None, None) on failure.
     Text is captured in the same page visit as the screenshot so both come from
     the identical render. Text is always full, even when the screenshot is clipped."""
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=NAVIGATE_TIMEOUT)
+        real_url = resolve_google_news(url)
+        if real_url != url:
+            print(f"    resolved GN -> {real_url[:70]}")
+        page.goto(real_url, wait_until='domcontentloaded', timeout=NAVIGATE_TIMEOUT)
         page.wait_for_timeout(2000)  # let JS render
         dismiss_cookies(page)
         page.wait_for_timeout(1000)
