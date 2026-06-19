@@ -220,6 +220,12 @@ def cmd_run(args):
     # Filter already archived
     pending = [a for a in articles if url_hash(a['url']) not in existing]
     print(f"Found {len(articles)} articles, {len(pending)} not yet archived")
+    # Refresh the manifest from already-captured rows BEFORE the (slow) capture
+    # loop. Scheduled systemd runs can hit TimeoutStartSec and be SIGTERM'd mid-
+    # capture before reaching the end-of-run write; writing here ensures the
+    # manifest still reflects all prior captures every run, so it never goes
+    # stale even if this run is killed.
+    write_manifest(conn, s3)
 
     if not pending:
         print("All articles already archived")

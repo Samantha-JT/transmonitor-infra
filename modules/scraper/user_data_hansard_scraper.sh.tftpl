@@ -174,7 +174,7 @@ Type=oneshot
 User=ssm-user
 WorkingDirectory=/home/ssm-user/hansard-scraper
 ExecStart=/usr/bin/python3.11 archiver.py run
-TimeoutStartSec=1800
+TimeoutStartSec=5400
 EOF_SERVICE
 
 cat > /etc/systemd/system/transmonitor-archiver.timer <<'EOF_TIMER'
