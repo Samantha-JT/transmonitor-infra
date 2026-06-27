@@ -149,6 +149,7 @@ export default {
     const earlyPath = new URL(request.url).pathname;
     if (
       earlyPath.startsWith("/assets/") ||
+      earlyPath.startsWith("/snap/") ||
       /\.(?:js|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot)$/i.test(earlyPath)
     ) {
       return env.API_PROXY ? env.API_PROXY.fetch(request) : fetch(request);

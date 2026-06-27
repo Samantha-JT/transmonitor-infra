@@ -154,6 +154,8 @@ locals {
     "GET /tmm/v1/get-data"          = "tmm_data"
     "GET /media/v1/sources"         = "media_bias"
     "POST /archive/v1/lookup"       = "archive_lookup"
+    "GET /snap/{id}"                = "snap_viewer"
+    "GET /snap/{id}/image"          = "snap_viewer"
     "GET /media/v1/source/{domain}" = "media_bias"
 
     # RSS

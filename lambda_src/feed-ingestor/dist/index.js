@@ -2144,33 +2144,24 @@ var import_fast_xml_parser = __toESM(require_fxp(), 1);
 
 // _shared/media-bias-domains.ts
 var SOURCE_REGISTRY = {
-  "aberdareonline.co.uk": { name: "Aberdare Online", domain: "aberdareonline.co.uk", editorialBias: "neutral", aliases: ["aberdareonline.co.uk"] },
   "advocate.com": { name: "The Advocate", domain: "advocate.com", editorialBias: "positive", aliases: ["Advocate.com", "Puberty Blocker Rulings"] },
-  "akc.org": { name: "American Kennel Club", domain: "akc.org", editorialBias: "neutral", aliases: ["American Kennel Club"] },
   "andrewsullivan.substack.com": { name: "Andrew Sullivan", domain: "andrewsullivan.substack.com", editorialBias: "hostile", aliases: ["The Weekly Dish | Andrew Sullivan"] },
-  "aol.com": { name: "AOL", domain: "aol.com", editorialBias: "neutral", aliases: ["AOL.com"] },
   "apnews.com": { name: "Apnews", domain: "apnews.com", editorialBias: "neutral", aliases: [] },
   "assignedmedia.org": { name: "Assigned Media", domain: "assignedmedia.org", editorialBias: "supportive", aliases: ["Assigned Media Backfill", "Assigned Media Search"] },
   "attitude.co.uk": { name: "Attitude", domain: "attitude.co.uk", editorialBias: "supportive", aliases: ["Attitude Backfill", "Attitude Search"] },
   "bbc.co.uk": { name: "BBC News", domain: "bbc.co.uk", editorialBias: "negative", aliases: ["BBC", "BBC Trans Coverage"] },
-  "bostonglobe.com": { name: "The Boston Globe", domain: "bostonglobe.com", editorialBias: "neutral", aliases: ["The Boston Globe"] },
   "catholicworldreport.com": { name: "Catholic World Report", domain: "catholicworldreport.com", editorialBias: "neutral", aliases: ["Catholic World Report"] },
   "cbn.com": { name: "CBN", domain: "cbn.com", editorialBias: "neutral", aliases: ["CBN", "cbn.com"] },
   "channel4.com": { name: "Channel 4 News", domain: "channel4.com", editorialBias: "positive", aliases: ["Channel 4", "Channel 4 News Backfill", "Channel 4 News Search"] },
   "dailymail.co.uk": { name: "The Daily Mail", domain: "dailymail.co.uk", editorialBias: "hostile", aliases: ["Daily Mail", "Daily Mail Backfill", "Daily Mail Search", "Mail Trans"] },
   "divamag.co.uk": { name: "DIVA Magazine", domain: "divamag.co.uk", editorialBias: "supportive", aliases: ["DIVA Magazine Backfill", "DIVA Magazine Search"] },
   "donoharmmedicine.org": { name: "Do No Harm", domain: "donoharmmedicine.org", editorialBias: "neutral", aliases: ["donoharmmedicine.org"] },
-  "erininthemorning.com": { name: "Erin in the Morning", domain: "erininthemorning.com", editorialBias: "supportive", aliases: ["Erin Backfill", "Erin Search"] },
   "express.co.uk": { name: "Daily Express", domain: "express.co.uk", editorialBias: "negative", aliases: ["Daily Express Backfill", "Daily Express Search", "Express"] },
-  "gate.ngo": { name: "GATE Global", domain: "gate.ngo", editorialBias: "supportive", aliases: ["GATE Backfill", "GATE Search"] },
   "gbnews.com": { name: "GB News", domain: "gbnews.com", editorialBias: "hostile", aliases: [] },
-  "genderanalysis.net": { name: "Genderanalysis", domain: "genderanalysis.net", editorialBias: "neutral", aliases: ["Gender Analysis"] },
   "glaad.org": { name: "GLAAD", domain: "glaad.org", editorialBias: "supportive", aliases: ["GLAAD Backfill", "GLAAD Search"] },
   "glad.org": { name: "GLAD Law", domain: "glad.org", editorialBias: "supportive", aliases: ["GLAD Law"] },
   "goodlawproject.org": { name: "Good Law Project", domain: "goodlawproject.org", editorialBias: "positive", aliases: [] },
   "huffingtonpost.co.uk": { name: "HuffPost UK", domain: "huffingtonpost.co.uk", editorialBias: "positive", aliases: ["HuffPost", "HuffPost UK Backfill", "HuffPost UK Search"] },
-  "idahonews.com": { name: "KBOI", domain: "idahonews.com", editorialBias: "neutral", aliases: ["KBOI"] },
-  "idahonews6.com": { name: "Idaho News 6", domain: "idahonews6.com", editorialBias: "neutral", aliases: ["Idaho News 6"] },
   "ilga.org": { name: "ILGA World", domain: "ilga.org", editorialBias: "supportive", aliases: [] },
   "independent.co.uk": { name: "The Independent", domain: "independent.co.uk", editorialBias: "neutral", aliases: ["Independent Trans"] },
   "inews.co.uk": { name: "The i", domain: "inews.co.uk", editorialBias: "neutral", aliases: ["The i Backfill", "The i Search", "i news", "inews"] },
@@ -2182,31 +2173,20 @@ var SOURCE_REGISTRY = {
   "nationalreview.com": { name: "National Review", domain: "nationalreview.com", editorialBias: "neutral", aliases: ["National Review"] },
   "ndtv.com": { name: "NDTV", domain: "ndtv.com", editorialBias: "neutral", aliases: ["Asia-Pacific Trans News"] },
   "nytimes.com": { name: "New York Times", domain: "nytimes.com", editorialBias: "neutral", aliases: ["The New York Times"] },
-  "operationsports.com": { name: "Operation Sports", domain: "operationsports.com", editorialBias: "neutral", aliases: ["Operation Sports"] },
   "pinknews.co.uk": { name: "Pink News", domain: "pinknews.co.uk", editorialBias: "supportive", aliases: ["PinkNews", "PinkNews | Latest lesbian, gay, bi and trans news"] },
   "reuters.com": { name: "Reuters", domain: "reuters.com", editorialBias: "neutral", aliases: ["Reuters Trans Coverage"] },
   "sky.com": { name: "Sky News", domain: "sky.com", editorialBias: "neutral", aliases: [] },
-  "sltrib.com": { name: "The Salt Lake Tribune", domain: "sltrib.com", editorialBias: "neutral", aliases: ["The Salt Lake Tribune"] },
   "spectator.co.uk": { name: "The Spectator", domain: "spectator.co.uk", editorialBias: "hostile", aliases: ["The Spectator Backfill", "The Spectator Search"] },
   "spokesman.com": { name: "The Spokesman-Review", domain: "spokesman.com", editorialBias: "neutral", aliases: ["The Spokesman-Review"] },
   "statnews.com": { name: "STAT News", domain: "statnews.com", editorialBias: "neutral", aliases: ["STAT", "STAT News", "STAT News LGBTQ"] },
   "stonewall.org.uk": { name: "Stonewall", domain: "stonewall.org.uk", editorialBias: "supportive", aliases: ["Stonewall Backfill", "Stonewall Search"] },
   "talk.tv": { name: "TalkTV", domain: "talk.tv", editorialBias: "hostile", aliases: ["Talk TV", "TalkTV Backfill", "TalkTV Search"] },
   "telegraph.co.uk": { name: "The Daily Telegraph", domain: "telegraph.co.uk", editorialBias: "hostile", aliases: ["The Telegraph", "The Telegraph Trans"] },
-  "tgeu.org": { name: "TGEU", domain: "tgeu.org", editorialBias: "supportive", aliases: ["TGEU News"] },
-  "thegrio.com": { name: "TheGrio", domain: "thegrio.com", editorialBias: "neutral", aliases: ["TheGrio"] },
   "theguardian.com": { name: "The Guardian", domain: "theguardian.com", editorialBias: "negative", aliases: ["Guardian Trans", "Guardian Transgender"] },
   "them.us": { name: "Them", domain: "them.us", editorialBias: "supportive", aliases: [] },
-  "theolympian.com": { name: "The Olympian", domain: "theolympian.com", editorialBias: "neutral", aliases: ["The Olympian"] },
   "thesun.co.uk": { name: "The Sun", domain: "thesun.co.uk", editorialBias: "hostile", aliases: ["The Sun Backfill", "The Sun Search"] },
   "thetimes.co.uk": { name: "The Times", domain: "thetimes.co.uk", editorialBias: "hostile", aliases: ["The Times Trans", "Times Trans"] },
   "theweek.com": { name: "The Week", domain: "theweek.com", editorialBias: "neutral", aliases: ["The Week"] },
-  "transactual.org.uk": { name: "TransActual", domain: "transactual.org.uk", editorialBias: "supportive", aliases: ["TransActual Backfill", "TransActual Search", "TransActual UK"] },
-  "transequality.org": { name: "Trans Equality", domain: "transequality.org", editorialBias: "supportive", aliases: ["Trans Equality Backfill", "Trans Equality Search"] },
-  "transgenderfeed.com": { name: "Transgender Feed", domain: "transgenderfeed.com", editorialBias: "supportive", aliases: [] },
-  "transgenderlawcenter.org": { name: "Trans Law Center", domain: "transgenderlawcenter.org", editorialBias: "supportive", aliases: ["Trans Law Center Backfill", "Trans Law Center Search"] },
-  "translash.org": { name: "TransLash", domain: "translash.org", editorialBias: "supportive", aliases: ["TransLash Backfill", "TransLash Search"] },
-  "transvitae.com": { name: "TransVitae", domain: "transvitae.com", editorialBias: "supportive", aliases: [] },
   "ucla.edu": { name: "UCLA", domain: "ucla.edu", editorialBias: "neutral", aliases: ["Newsroom | UCLA", "UCLA"] },
   "vice.com": { name: "Vice UK", domain: "vice.com", editorialBias: "positive", aliases: ["Vice", "Vice UK Backfill", "Vice UK Search"] },
   "washingtonpost.com": { name: "Washington Post", domain: "washingtonpost.com", editorialBias: "neutral", aliases: ["The Washington Post"] },
@@ -2292,8 +2272,8 @@ var FEEDS = {
   legal: [
     { name: "Erin in the Morning", url: "https://www.erininthemorning.com/feed" },
     // DISABLED 2026-06-07: persistent 404/403 in Lambda logs: { name: "Trans Legislation Tracker", url: "https://translegislation.com/rss.xml" },
-    { name: "ACLU LGBT News", url: "https://www.aclu.org/news/by-issue/lgbtq-rights/feed" },
-    { name: "US Trans Legislation", url: gn('("gender-affirming care ban" OR "trans bill" OR "bathroom bill","bathroom law" OR "drag ban") when:3d') },
+    { name: "ACLU LGBT News", url: gn('(transgender OR "trans rights" OR "gender-affirming") site:aclu.org when:14d') },
+    { name: "US Trans Legislation", url: gn('("gender-affirming care ban" OR "trans bill" OR "bathroom bill" OR "bathroom law" OR "drag ban") when:3d') },
     { name: "UK Trans Law", url: gnGB('("GRC" OR "Gender Recognition Act" OR "Cass Review" OR "Equality Act") UK when:3d') },
     { name: "EU Gender Recognition", url: gn('("gender self-determination" OR "Ley Trans" OR "Selbstbestimmungsgesetz") when:7d') }
   ],
@@ -2318,11 +2298,17 @@ var FEEDS = {
     { name: "HRC Violence Tracker", url: gn('site:hrc.org ("violence" OR "fatal" OR "transgender") when:30d') }
   ],
   "uk-press": [
-    { name: "BBC News", url: gnGB('(transgender OR "trans rights" OR "Cass Review") site:bbc.co.uk when:3d') },
-    { name: "The Guardian", url: gnGB('(transgender OR "trans rights" OR "gender recognition") site:theguardian.com when:3d') },
+    { name: "BBC News", url: "https://feeds.bbci.co.uk/news/topics/cp7r8vgl2lgt/rss.xml" },
+    { name: "The Guardian", url: "https://www.theguardian.com/society/transgender/rss" },
     { name: "The Independent", url: gnGB('(transgender OR "trans rights") site:independent.co.uk when:3d') },
     { name: "Sky News", url: gnGB('(transgender OR "trans rights") site:news.sky.com when:3d') },
-    { name: "Channel 4 News", url: gnGB('(transgender OR "trans rights") site:channel4.com when:7d') }
+    { name: "Channel 4 News", url: gnGB('(transgender OR "trans rights") site:channel4.com when:7d') },
+    { name: "Daily Mail", url: gnGB('(transgender OR "trans rights") site:dailymail.co.uk when:14d') },
+    { name: "Daily Express", url: gnGB('(transgender OR "trans rights") site:express.co.uk when:14d') },
+    { name: "GB News", url: gnGB('(transgender OR "trans rights") site:gbnews.com when:14d') },
+    { name: "Metro", url: gnGB('(transgender OR "trans rights") site:metro.co.uk when:14d') },
+    { name: "The i", url: gnGB('(transgender OR "trans rights") site:inews.co.uk when:14d') },
+    { name: "The Times", url: gnGB('(transgender OR "trans rights") site:thetimes.co.uk when:30d') }
   ],
   wins: [
     { name: "Trans Wins", url: gn('(transgender OR "trans rights") (wins OR victory OR "first trans" OR elected OR milestone OR landmark) when:7d') },
@@ -2331,7 +2317,12 @@ var FEEDS = {
   mainstream: [
     { name: "Reuters LGBT", url: gn('site:reuters.com ("transgender" OR "gender-affirming care" OR "trans rights") when:3d') },
     { name: "Washington Post Trans", url: gn('site:washingtonpost.com ("transgender" OR "gender-affirming care ban" OR "trans bill") when:7d') },
-    { name: "NYT Trans Coverage", url: gn('site:nytimes.com ("transgender" OR "gender-affirming care ban" OR "trans bill") when:7d') }
+    { name: "NYT Trans Coverage", url: gn('site:nytimes.com ("transgender" OR "gender-affirming care ban" OR "trans bill") when:7d') },
+    { name: "National Review", url: gn('(transgender OR "trans") site:nationalreview.com when:30d') },
+    { name: "CBN", url: gn('(transgender OR "trans") site:cbn.com when:30d') },
+    { name: "Catholic World Report", url: gn('(transgender OR "trans") site:catholicworldreport.com when:30d') },
+    { name: "The Washington Stand", url: gn('(transgender OR "trans") site:washingtonstand.com when:30d') },
+    { name: "AP News", url: gn('(transgender OR "trans rights") site:apnews.com when:3d') }
   ],
   international: [
     { name: "Reuters Trans Coverage", url: gn('site:reuters.com ("transgender" OR "trans rights" OR "nonbinary") when:7d') },
@@ -2342,6 +2333,11 @@ var FEEDS = {
 var SAFETY_KEYWORDS = ["murdered", "killed", "stabbed", "shot", "attacked", "assault", "hate crime", "violence", "fatal", "death", "tdor", "trans day of remembrance"];
 var RIGHTS_KEYWORDS = ["ban", "banned", "outlawed", "criminalised", "criminalized", "bathroom bill", "bathroom law", "anti-trans", "drag ban", "gender ideology"];
 var POSITIVE_KEYWORDS = ["victory", "wins", "elected", "landmark", "milestone", "first trans", "overturns", "blocks ban", "upholds", "celebrates", "representation", "awarded"];
+var TRANS_TERMS = ["transgender", "trans woman", "trans women", "trans man", "trans men", "trans people", "trans rights", "trans kid", "trans child", "trans youth", "nonbinary", "non-binary", "gender-affirming", "gender affirming", "gender identity", "gender recognition", "gender dysphoria", "gender clinic", "puberty blocker", "cass review", "gender critical", "gender ideology", "cisgender", "two-spirit", "detransition", "trans healthcare", "trans athlete", "drag ban", "bathroom bill", '"trans"', "intersex"];
+function isTransRelevantTitle(title) {
+  const t = (title ?? "").toLowerCase();
+  return TRANS_TERMS.some((term) => t.includes(term));
+}
 function classifyItem(title) {
   const t = title.toLowerCase();
   if (SAFETY_KEYWORDS.some((k) => t.includes(k))) return "safety";
@@ -2459,6 +2455,24 @@ var handler = async () => {
   }));
   console.log(`feed-ingestor: wrote ${deduped.length} items`);
   try {
+    const pending = deduped.filter((item) => item.link).map((item) => ({
+      url: item.link,
+      title: item.title,
+      source: item.source,
+      category: item.classification,
+      publishedAt: item.pubDate
+    }));
+    await s3.send(new import_client_s3.PutObjectCommand({
+      Bucket: process.env.ARCHIVE_BUCKET,
+      Key: "pending/articles.json",
+      Body: JSON.stringify(pending),
+      ContentType: "application/json"
+    }));
+    console.log(`feed-ingestor: wrote ${pending.length} pending archive refs`);
+  } catch (e) {
+    console.warn("feed-ingestor: archive producer failed (non-fatal):", e.message);
+  }
+  try {
     const redis = await getRedis();
     await redis.set(`digest:${variant}`, body, { EX: 1200 });
     console.log("feed-ingestor: Redis warmed");
@@ -2467,6 +2481,7 @@ var handler = async () => {
       for (const item of deduped) {
         if (!item.link) continue;
         if (!canResolveBiasDomain({ link: item.link, title: item.title, source: item.source })) continue;
+        if (!isTransRelevantTitle(item.title)) continue;
         refs.push(JSON.stringify({
           url: item.link,
           title: item.title,

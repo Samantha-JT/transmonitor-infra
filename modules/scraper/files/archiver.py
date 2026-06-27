@@ -25,7 +25,7 @@ REDIS_URL       = os.environ.get('REDIS_URL', '')
 DB_PATH         = Path(__file__).parent / 'archive_index.db'
 AWS_REGION      = 'eu-west-1'
 SCREENSHOT_W    = 1280
-MAX_SCROLL_H    = 12_000   # cap capture height (px) to bound Chromium memory on tall pages
+MAX_SCROLL_H    = 5_000    # cap capture height (px) — keeps snapshots viewable at fit-to-window
 REQUEST_TIMEOUT = 20_000   # ms
 NAVIGATE_TIMEOUT= 45_000   # ms (raised: real publisher pages are ad-heavy/slow)
 
@@ -266,8 +266,13 @@ def s3_key(url: str, date: str) -> str:
     return f"screenshots/{year}/{month}/{day}/{domain}/{url_hash(url)}.jpg"
 
 def sanitise(s: str) -> str:
-    """ASCII-only, printable, max 256 chars for S3 tags/metadata."""
-    return ''.join(c for c in str(s) if 32 <= ord(c) < 128)[:256]
+    """Make a value safe for S3 object tags. AWS allows letters, whitespace,
+    digits, and `+ - = . _ : / @`. Anything else is replaced with a space and
+    runs are collapsed. Capped at 256 chars (AWS limit)."""
+    import re
+    cleaned = re.sub(r'[^\w\s+\-=.:/@]', ' ', str(s), flags=re.UNICODE)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned[:256]
 
 def upload_to_s3(s3_client, image_bytes: bytes, key: str, tags: dict) -> bool:
     from urllib.parse import quote

@@ -88,7 +88,7 @@ export const handler = async (event: any) => {
       const entry = manifest.entries[urlHash(url)];
       if (!entry) return [url, { archived: false }] as const;
       if (isCold(entry.captured_at)) {
-        return [url, { archived: true, cold: true, captured_at: entry.captured_at, domain: entry.domain }] as const;
+        return [url, { archived: true, cold: true, id: urlHash(url), captured_at: entry.captured_at, domain: entry.domain }] as const;
       }
       const [screenshot, text] = await Promise.all([
         presign(entry.screenshot_key),
@@ -97,6 +97,7 @@ export const handler = async (event: any) => {
       return [url, {
         archived: true,
         cold: false,
+        id: urlHash(url),
         captured_at: entry.captured_at,
         domain: entry.domain,
         screenshot,

@@ -18,7 +18,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/snap/")) {
       return handleApiRequest(request, url, env, ctx);
     }
 
@@ -89,7 +89,10 @@ function matchApiPath(pathname) {
 }
 
 async function fetchFromApi(request, url, env) {
-  const apiPath = url.pathname.slice(4);
+  // Strip /api prefix when present; pass /snap and other proxied paths through unchanged.
+  const apiPath = url.pathname.startsWith("/api/")
+    ? url.pathname.slice(4)
+    : url.pathname;
   const target = new URL(apiPath + url.search, API_GATEWAY);
   const apiRequest = new Request(target.toString(), {
     method:  request.method,

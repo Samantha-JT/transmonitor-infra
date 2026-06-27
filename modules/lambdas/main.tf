@@ -42,7 +42,7 @@ locals {
   }
 
   feed_ingestor_env = merge(local.common_env, {
-    FEED_TIMEOUT_MS = "5000"
+    FEED_TIMEOUT_MS = "15000"
     PUSHOVER_TOKEN  = var.pushover_token
     PUSHOVER_USER   = var.pushover_user
   })
@@ -165,6 +165,7 @@ locals {
     "${var.name_prefix}-trans-rights",
     "${var.name_prefix}-tmm-data",
     "${var.name_prefix}-archive-lookup",
+    "${var.name_prefix}-snap-viewer",
     "${var.name_prefix}-rss-proxy",
     "${var.name_prefix}-health",
   ]
@@ -438,6 +439,7 @@ output "invoke_arns" {
     tmm_data        = aws_lambda_function.tmm_data.invoke_arn
     media_bias      = aws_lambda_function.media_bias.invoke_arn
     archive_lookup  = aws_lambda_function.archive_lookup.invoke_arn
+    snap_viewer     = aws_lambda_function.snap_viewer.invoke_arn
     rss_proxy       = aws_lambda_function.rss_proxy.invoke_arn
     health          = aws_lambda_function.health.invoke_arn
     security_score  = aws_lambda_function.security_score.invoke_arn
@@ -455,6 +457,7 @@ output "function_names" {
     tmm_data        = aws_lambda_function.tmm_data.function_name
     media_bias      = aws_lambda_function.media_bias.function_name
     archive_lookup  = aws_lambda_function.archive_lookup.function_name
+    snap_viewer     = aws_lambda_function.snap_viewer.function_name
     rss_proxy       = aws_lambda_function.rss_proxy.function_name
     health          = aws_lambda_function.health.function_name
     security_score  = aws_lambda_function.security_score.function_name
@@ -471,6 +474,12 @@ data "archive_file" "archive_lookup" {
   type        = "zip"
   source_dir  = "${path.root}/lambda_src/archive-lookup/dist"
   output_path = "${path.root}/.terraform/lambda_zips/archive-lookup.zip"
+}
+
+data "archive_file" "snap_viewer" {
+  type        = "zip"
+  source_dir  = "${path.root}/lambda_src/snap-viewer/dist"
+  output_path = "${path.root}/.terraform/lambda_zips/snap-viewer.zip"
 }
 
 data "archive_file" "media_bias" {
@@ -493,6 +502,22 @@ resource "aws_lambda_function" "archive_lookup" {
   # No vpc_config: this function only needs S3 (manifest + presigning), not Redis.
   # Staying out of the VPC avoids the ~800ms ENI cold-start penalty.
   tracing_config { mode = "Active" }
+}
+
+resource "aws_lambda_function" "snap_viewer" {
+  function_name    = "${var.name_prefix}-snap-viewer"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "nodejs22.x"
+  architectures    = ["arm64"]
+  timeout          = 10
+  memory_size      = 512  # streams JPEG bytes; higher than 256 to keep p99 latency low
+  filename         = data.archive_file.snap_viewer.output_path
+  source_code_hash = data.archive_file.snap_viewer.output_base64sha256
+  environment { variables = local.common_env }
+  # No vpc_config — same reasoning as archive-lookup (S3 only, avoid ENI cold-start).
+  tracing_config { mode = "Active" }
+  depends_on = [aws_cloudwatch_log_group.lambdas]
 }
 
 resource "aws_lambda_function" "media_bias" {
